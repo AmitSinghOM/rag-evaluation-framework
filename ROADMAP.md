@@ -27,9 +27,9 @@ Built in small rounds. Each phase ends with CI green, the README status line upd
 ## Phase 2 — Non-inferiority gate + GitHub Action
 **Goal:** Block a retrieval regression in CI without passing real regressions at ~50 queries.
 
-- [ ] `rageval gate`: fail unless the lower CI bound of (candidate − baseline) per metric is above `−max_drop`
-- [ ] Exit codes documented and tested
-- [ ] GitHub Action wrapping the gate
+- [x] `rageval gate`: fail unless the lower CI bound of (candidate − baseline) per metric is above `−max_drop`
+- [x] Exit codes documented and tested
+- [x] GitHub Action wrapping the gate
 
 ## Phase 3 — Grounding check, EXPERIMENTAL
 **Goal:** Measure, not claim. A grounding signal is only described in the README once its calibration report exists.

@@ -1,7 +1,8 @@
-"""rageval: retrieval-quality evaluation (metrics core, loaders, report, CLI)."""
+"""rageval: retrieval-quality evaluation (metrics core, loaders, report, gate, CLI)."""
 
 from .dataset import Record, load
 from .evaluate import evaluate, parse_metric
+from .gate import GateResult, gate
 from .loaders import LoaderError, Qrels, Run, read_jsonl, read_qrels, read_run
 from .metrics import (
     DocId,
@@ -20,6 +21,7 @@ __version__ = "0.1.0a0"
 __all__ = [
     "Comparison",
     "DocId",
+    "GateResult",
     "LoaderError",
     "Qrels",
     "Record",
@@ -32,6 +34,7 @@ __all__ = [
     "compare",
     "dcg_at_k",
     "evaluate",
+    "gate",
     "load",
     "mrr",
     "ndcg_at_k",

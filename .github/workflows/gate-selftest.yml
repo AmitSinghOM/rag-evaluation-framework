@@ -1,0 +1,99 @@
+name: gate self-test
+
+# Proves the composite action at the repository root (`uses: ./`) both ways:
+# identical reports must pass, a degraded candidate must fail with exit 10.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  must-pass:
+    name: must pass (identical reports)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Make two reports of the same run
+        run: |
+          python -m pip install --quiet .
+          for out in base cand; do
+            rageval run --qrels examples/toy/qrels.txt --run examples/toy/run_a.txt \
+              --metrics ndcg@10,recall@100 --out "$RUNNER_TEMP/$out.json"
+          done
+
+      - name: Gate (must pass)
+        id: gate
+        uses: ./
+        with:
+          baseline: ${{ runner.temp }}/base.json
+          candidate: ${{ runner.temp }}/cand.json
+          metrics: ndcg@10:0.02,recall@100:0.05
+
+      - name: Check the gate passed with exit 0
+        env:
+          OUTCOME: ${{ steps.gate.outcome }}
+          CODE: ${{ steps.gate.outputs.exit-code }}
+        run: |
+          echo "outcome=$OUTCOME exit-code=$CODE"
+          test "$OUTCOME" = success
+          test "$CODE" = 0
+
+  must-fail:
+    name: must fail (degraded candidate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Make a baseline report and a degraded candidate report
+        # The candidate retrieves one unjudged document per query, so every
+        # metric drops to 0 on every query.
+        run: |
+          python -m pip install --quiet .
+          for q in q1 q2 q3 q4 q5 q6; do echo "$q Q0 junk 1 1.0 degraded"; done \
+            > "$RUNNER_TEMP/degraded.txt"
+          rageval run --qrels examples/toy/qrels.txt --run examples/toy/run_b.txt \
+            --metrics ndcg@10,recall@100 --out "$RUNNER_TEMP/base.json"
+          rageval run --qrels examples/toy/qrels.txt --run "$RUNNER_TEMP/degraded.txt" \
+            --metrics ndcg@10,recall@100 --out "$RUNNER_TEMP/cand.json"
+
+      - name: Gate (must fail)
+        id: gate
+        continue-on-error: true
+        uses: ./
+        with:
+          baseline: ${{ runner.temp }}/base.json
+          candidate: ${{ runner.temp }}/cand.json
+          metrics: ndcg@10:0.02,recall@100:0.05
+
+      - name: Check the gate failed with exit 10
+        # outcome is the step's result before continue-on-error; exit 10 (not 1
+        # or 2) proves it failed on the verdict, not on a broken install or input.
+        env:
+          OUTCOME: ${{ steps.gate.outcome }}
+          CODE: ${{ steps.gate.outputs.exit-code }}
+        run: |
+          echo "outcome=$OUTCOME exit-code=$CODE"
+          test "$OUTCOME" = failure
+          test "$CODE" = 10
