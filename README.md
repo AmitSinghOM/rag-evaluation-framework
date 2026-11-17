@@ -1,12 +1,46 @@
 # rag-evaluation-framework
 
-**A framework for measuring retrieval quality — Recall@K, Precision@K, MRR, NDCG — and detecting hallucination in generated answers.**
+**Measures retrieval quality for RAG systems: Recall@K, Precision@K, MRR, NDCG with graded relevance, in pure Python with no runtime dependencies, and every value cross-checked against [ranx](https://github.com/AmenRa/ranx).**
 
-> **Status: planned.** Part of the AI Platform Engineer blueprint. Phase 0 skeleton only (the four IR metrics in `rageval/metrics.py`, 9 tests). Build order: **AgentOS first**, then earn the right to start the next one by finishing the last.
+> **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 (loaders, report, CLI) in progress; nothing published.**
+> The package is not on PyPI. Install from source (below). The repository is private until v0.1.
+> Scope and the reasons for it: [docs/decisions/ADR-0001-v0.1-scope.md](./docs/decisions/ADR-0001-v0.1-scope.md).
+
+## What works today
+
+- `recall_at_k`, `precision_at_k`, `mrr` (with optional `k`), `dcg_at_k`, `ndcg_at_k` over ordered id lists.
+- Binary relevance (a set of ids) or graded relevance (a mapping `id -> grade`; grade 0 = judged not relevant).
+- Duplicate ids in a ranking count once, at their first position; later repeats are wasted slots and cannot inflate a score.
+- Every rule is written down in [docs/METRIC-DEFINITIONS.md](./docs/METRIC-DEFINITIONS.md) and locked by a test that scores 256 synthetic queries through both rageval and ranx and requires agreement within 1e-9.
+- Typed (`py.typed`), mypy strict, ruff, a 95% branch-coverage floor enforced in CI, CI on Python 3.11-3.14 (Ubuntu) and 3.13 (macOS).
+- A tiny in-memory loader (`load`) that turns `(query, retrieved, relevant)` triples into records.
+
+Not yet: file loaders, a report, a CLI, a regression gate, a grounding check. See [ROADMAP.md](./ROADMAP.md).
+
+## Install (from source)
+
+```bash
+pip install git+https://github.com/AmitSinghOM/rag-evaluation-framework.git
+```
+
+Python 3.11 or newer. The install brings no third-party package.
+
+## Use
+
+```python
+from rageval import ndcg_at_k, recall_at_k, mrr
+
+retrieved = ["p7", "p2", "p2", "p9"]  # your retriever's top-k, best first
+relevant = {"p2": 3, "p9": 1, "p4": 2}  # graded labels; or a plain set for binary
+
+recall_at_k(retrieved, relevant, k=4)  # 2/3: p2 and p9 found, p4 missed
+ndcg_at_k(retrieved, relevant, k=4)  # graded gain, log2 discount, repeat of p2 ignored
+mrr(retrieved, relevant, k=10)  # 0.5: first relevant passage at rank 2
+```
 
 ## Why this exists
 
-Most RAG systems are tuned by vibes. This makes retrieval quality measurable: load a labelled dataset, run your retriever, and get real IR metrics plus a grounding check on generated answers.
+Most RAG systems are tuned by vibes. This makes retrieval quality measurable: load a labelled dataset, run your retriever, and get real IR metrics you can trust, because they are checked against an independent implementation rather than asserted.
 
 ## The assistant pattern this framework measures
 
@@ -55,22 +89,15 @@ max retrieval score 0.12 < threshold
 
 Fix retrieval before prompt-tuning: if the right passage is never retrieved, no prompt change can recover the answer. Do not tune by feel — run the IR metrics in this framework against a labelled query set before and after every change.
 
-## Architecture (planned)
+## Development
 
+```bash
+pip install -e ".[dev]"      # pulls ranx (numba, pandas, scipy) for the cross-check only
+ruff check . && ruff format --check . && mypy && pytest --cov
 ```
-Dataset Loader → Retriever → Evaluator (Recall@K, Precision@K, MRR, NDCG) → Hallucination Detector → Score Dashboard
-```
 
-## Components
+See [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md) and [CHANGELOG.md](./CHANGELOG.md).
 
-- Dataset loader (queries + relevance labels)
-- Pluggable retriever interface
-- IR metrics: Recall@K, Precision@K, MRR, NDCG
-- Hallucination / grounding detector
-- Score dashboard + run comparison
+## License
 
-## Tech stack
-
-Python · NumPy · a vector store (FAISS/Chroma) · pytest · small dashboard
-
-See [ROADMAP.md](./ROADMAP.md) for the phased build plan.
+MIT. See [LICENSE](./LICENSE).
