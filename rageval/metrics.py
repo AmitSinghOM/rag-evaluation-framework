@@ -87,7 +87,7 @@ def mrr(retrieved: Sequence[D], relevant: Relevance[D], k: int | None = None) ->
     (``MRR@k``). Returns 0.0 if no relevant document appears.
     """
     grades = _grades(relevant)
-    top = list(retrieved) if k is None else _top_k(retrieved, k)
+    top = retrieved if k is None else _top_k(retrieved, k)
     for rank, doc in enumerate(top, start=1):
         if doc in grades:
             return 1.0 / rank
