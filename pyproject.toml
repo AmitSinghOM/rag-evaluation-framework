@@ -37,16 +37,22 @@ Homepage = "https://github.com/AmitSinghOM/rag-evaluation-framework"
 Changelog = "https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/CHANGELOG.md"
 Issues = "https://github.com/AmitSinghOM/rag-evaluation-framework/issues"
 
+[project.scripts]
+rageval = "rageval.cli:main"
+
 [project.optional-dependencies]
 # ranx is the reference implementation the metrics are checked against
 # (tests/test_ranx_crosscheck.py). It is DEV ONLY: it pulls numba, pandas and
-# scipy, which must never reach a user of rageval.
+# scipy, which must never reach a user of rageval. jsonschema validates the
+# emitted report against docs/report.schema.json in tests only.
 dev = [
     "pytest==9.2.0",
     "pytest-cov==7.1.0",
     "ruff==0.17.5",
     "mypy==2.4.1",
     "ranx==0.3.21",
+    "jsonschema==4.26.0",
+    "types-jsonschema==4.26.0.20261006",
 ]
 
 [tool.setuptools.packages.find]

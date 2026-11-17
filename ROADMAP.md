@@ -18,10 +18,10 @@ Built in small rounds. Each phase ends with CI green, the README status line upd
 ## Phase 1 — Loaders, report, CLI
 **Goal:** Evaluate a real run file against real labels from the command line and get a report you can diff.
 
-- [ ] Loaders: JSONL (`{"query_id", "retrieved": [...]}` plus labels), TREC qrels, TREC run files
-- [ ] Versioned JSON report: per-query scores, means, bootstrap confidence intervals
-- [ ] `rageval run` and `rageval compare`
-- [ ] Quickstart in the README, run live exactly as written
+- [x] Loaders: JSONL (`{"query_id", "retrieved": [...]}` plus labels), TREC qrels, TREC run files
+- [x] Versioned JSON report: per-query scores, means, bootstrap confidence intervals
+- [x] `rageval run` and `rageval compare`
+- [x] Quickstart in the README, run live exactly as written
 - [ ] Repository public
 
 ## Phase 2 — Non-inferiority gate + GitHub Action
