@@ -1,0 +1,92 @@
+name: rageval gate
+description: >-
+  Fail the job when a candidate retrieval report is worse than the baseline by
+  more than a set margin on any metric (non-inferiority check, `rageval gate`).
+author: Amit Singh
+
+inputs:
+  baseline:
+    description: Path to the baseline report written by `rageval run --out`.
+    required: true
+  candidate:
+    description: Path to the candidate report, made on the same qrels.
+    required: true
+  metrics:
+    description: >-
+      Comma-separated METRIC:MAX_DROP pairs, for example
+      "ndcg@10:0.02,recall@100:0.05". Each metric fails when the lower bound of
+      the CI of (candidate - baseline) is not above -MAX_DROP.
+    required: true
+  resamples:
+    description: Paired bootstrap resamples.
+    required: false
+    default: "10000"
+  seed:
+    description: Bootstrap seed; the same seed gives the same verdict.
+    required: false
+    default: "0"
+  python-version:
+    description: Python used to install and run rageval (3.11 or newer).
+    required: false
+    default: "3.13"
+
+outputs:
+  exit-code:
+    description: >-
+      Exit code of `rageval gate`: 0 every metric passed, 10 at least one failed,
+      1 usage error, 2 input error (unreadable report, different qrels).
+    value: ${{ steps.gate.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install rageval
+      shell: bash
+      env:
+        RAGEVAL_SRC: ${{ github.action_path }}
+      run: python -m pip install --quiet --disable-pip-version-check "$RAGEVAL_SRC"
+
+    - name: rageval gate
+      id: gate
+      shell: bash
+      # Inputs reach the script only through env, never through ${{ }} in the
+      # script text, so a crafted input cannot inject shell.
+      env:
+        BASELINE: ${{ inputs.baseline }}
+        CANDIDATE: ${{ inputs.candidate }}
+        METRICS: ${{ inputs.metrics }}
+        RESAMPLES: ${{ inputs.resamples }}
+        SEED: ${{ inputs.seed }}
+      run: |
+        set -eo pipefail  # no -u: macOS ships bash 3.2, where an empty array is "unbound"
+        args=()
+        IFS=',' read -r -a pairs <<< "$METRICS"
+        for pair in "${pairs[@]}"; do
+          pair="${pair//[[:space:]]/}"
+          [ -n "$pair" ] || continue
+          case "$pair" in
+            *:*) args+=(--metric "${pair%:*}" --max-drop "${pair##*:}") ;;
+            *)
+              echo "::error title=rageval gate::metrics entry is not METRIC:MAX_DROP: $pair"
+              echo "exit-code=1" >> "$GITHUB_OUTPUT"
+              exit 1
+              ;;
+          esac
+        done
+        if [ "${#args[@]}" -eq 0 ]; then
+          echo "::error title=rageval gate::the metrics input is empty"
+          echo "exit-code=1" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+        code=0
+        rageval gate --baseline "$BASELINE" --candidate "$CANDIDATE" "${args[@]}" \
+          --resamples "$RESAMPLES" --seed "$SEED" --summary "$GITHUB_STEP_SUMMARY" || code=$?
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        if [ "$code" -eq 10 ]; then
+          echo "::error title=rageval gate::the candidate failed the non-inferiority check on at least one metric; see the job summary"
+        fi
+        exit "$code"

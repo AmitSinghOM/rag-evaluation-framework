@@ -9,6 +9,36 @@ Nothing has been released or published yet.
 
 ### Added
 
+- [G] `rageval gate --baseline B --candidate C --metric NAME --max-drop X
+  [--metric ... --max-drop ...] [--resamples N --seed S --level L]
+  [--format table|json] [--summary PATH]`: a non-inferiority regression
+  gate (`rageval.gate`, also `rageval.gate()` in the library). Per metric,
+  the paired per-query difference (candidate - baseline) over the shared
+  queries and its percentile bootstrap CI (`paired_diff_ci`, 10000
+  resamples by default); a metric passes when the lower bound, rounded to
+  6 places, is above `-max_drop`. Exit 0 when every metric passes, 10 when
+  any fails, 1 on a usage error (a `--metric` without its `--max-drop`, a
+  metric missing from a report, a max drop not above 0), 2 on an input
+  error (unreadable report, other `schema_version`, different qrels, no
+  shared query, a missing or non-finite per-query value). Warns on stderr
+  under 30 shared queries. `--summary` appends a Markdown table for
+  `$GITHUB_STEP_SUMMARY`.
+- [G] `docs/GATE.md`: what the gate checks in plain words, why a p-value
+  gate is rejected (low power at ~50 queries passes real regressions), how
+  to choose `--max-drop` and `--resamples`, and the small-n warning.
+- [G] Composite GitHub Action `action.yml` (inputs `baseline`,
+  `candidate`, `metrics` as `ndcg@10:0.02,recall@100:0.05`, `resamples`,
+  `seed`, `python-version`; output `exit-code`): installs rageval from the
+  action's own checkout, runs the gate, writes the job summary, fails the
+  step on a failed gate. `.github/workflows/gate-selftest.yml` runs it with
+  `uses: ./` on every pull request: one job must pass (identical reports),
+  one must fail with exit 10 (degraded candidate).
+- [G] `tests/test_gate.py`: every verdict, exit code and usage rule, a
+  seeded 200-case check of the invariant (a pass bounds the mean drop by
+  `max_drop` plus the CI half-width; an identical candidate always passes),
+  and a lock that the README gate output is what a live run prints.
+- [G] README `Regression gate` section with real output.
+
 - [A] Loaders (`rageval.loaders`): `read_qrels` (TREC qrels, graded; grade 0
   = judged not relevant), `read_run` (TREC run; ordered by score desc then
   rank asc, repeats kept) and `read_jsonl` (one object per query with

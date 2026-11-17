@@ -2,7 +2,7 @@
 
 **Measures retrieval quality for RAG systems: Recall@K, Precision@K, MRR, NDCG with graded relevance, in pure Python with no runtime dependencies, and every value cross-checked against [ranx](https://github.com/AmenRa/ranx).**
 
-> **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 loaders, versioned report with bootstrap CIs and the `rageval run` / `rageval compare` CLI done; nothing published.**
+> **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 loaders, versioned report with bootstrap CIs and the `rageval run` / `rageval compare` CLI done; Phase 2 non-inferiority regression gate (`rageval gate`) and its GitHub Action done; nothing published.**
 > The package is not on PyPI. Install from source (below). The repository is private until v0.1.
 > Scope and the reasons for it: [docs/decisions/ADR-0001-v0.1-scope.md](./docs/decisions/ADR-0001-v0.1-scope.md).
 
@@ -14,10 +14,11 @@
 - Every rule is written down in [docs/METRIC-DEFINITIONS.md](./docs/METRIC-DEFINITIONS.md) and locked by a test that scores 256 synthetic queries through both rageval and ranx and requires agreement within 1e-9.
 - Loaders for TREC qrels, TREC run files and a JSONL dataset format (`read_qrels`, `read_run`, `read_jsonl`); a malformed line fails with the file and line number.
 - `rageval run`: a versioned JSON report (`schema_version` 1, [docs/REPORT-SCHEMA.md](./docs/REPORT-SCHEMA.md), [docs/report.schema.json](./docs/report.schema.json)) with per-query scores, means and seeded bootstrap 95% confidence intervals; `rageval compare`: paired per-query differences with their CI, refusing reports made on different qrels. Means agree with `ranx.evaluate` on the same files within 1e-9.
+- `rageval gate`: a non-inferiority regression gate for CI. Per metric it fails (exit 10) unless the lower bound of the paired bootstrap CI of candidate minus baseline is above `-max_drop`; a composite GitHub Action (`action.yml`) wraps it. See [Regression gate](#regression-gate) and [docs/GATE.md](./docs/GATE.md).
 - Typed (`py.typed`), mypy strict, ruff, a 95% branch-coverage floor enforced in CI, CI on Python 3.11-3.14 (Ubuntu) and 3.13 (macOS).
 - A tiny in-memory loader (`load`) that turns `(query, retrieved, relevant)` triples into records.
 
-Not yet: a regression gate with an exit code, a GitHub Action, a grounding check, JSONL input on the command line. See [ROADMAP.md](./ROADMAP.md).
+Not yet: a grounding check, JSONL input on the command line. See [ROADMAP.md](./ROADMAP.md).
 
 ## Install (from source)
 
@@ -79,7 +80,53 @@ n_queries: 6
   },
 ```
 
-Metric names: `ndcg@K`, `recall@K`, `precision@K`, `mrr`, `mrr@K`. Options: `--resamples N` (1000), `--seed S` (0), `--name NAME`; `compare --format json`. Exit codes: 0 ok, 1 usage, 2 input or format error, 3 internal. A query in the qrels that the run never answers scores 0; a query in the run that is not judged is ignored and listed under `warnings`. Six queries give the wide intervals above by design; the point of the CI is that on a real query set it tells you whether a difference is noise.
+Metric names: `ndcg@K`, `recall@K`, `precision@K`, `mrr`, `mrr@K`. Options: `--resamples N` (1000), `--seed S` (0), `--name NAME`; `compare --format json`. Exit codes: 0 ok, 1 usage, 2 input or format error, 3 internal, 10 regression gate failed. A query in the qrels that the run never answers scores 0; a query in the run that is not judged is ignored and listed under `warnings`. Six queries give the wide intervals above by design; the point of the CI is that on a real query set it tells you whether a difference is noise.
+
+## Regression gate
+
+`rageval gate` fails a CI job when a candidate is worse than the baseline by more than a drop you accept. Per metric it takes the per-query difference (candidate − baseline), bootstraps its mean, and passes only when the interval's **lower bound** is above `-max_drop`: the candidate must show it is not worse. Too little evidence is a fail, not a pass. Why this and not a p-value, and how to pick `--max-drop`: [docs/GATE.md](./docs/GATE.md).
+
+With the two Quickstart reports (Python 3.13.12, same fresh venv):
+
+```text
+$ rageval gate --baseline report_a.json --candidate report_b.json --metric ndcg@10 --max-drop 0.02 --metric recall@100 --max-drop 0.05
+warning: only 6 shared queries (< 30): the CI is wide, so the gate fails changes it cannot show to be harmless; see docs/GATE.md
+metric       baseline  candidate  diff (c-b)  ci95                     threshold  verdict  n
+ndcg@10      0.488957   0.863597   +0.374640  [-0.018236, +0.738854]   -0.020000  PASS     6
+recall@100   0.583333   1.000000   +0.416667  [+0.083333, +0.750000]   -0.050000  PASS     6
+gate: PASS (2 of 2 metrics pass; candidate run_b vs baseline run_a)
+$ echo $?
+0
+$ rageval gate --baseline report_b.json --candidate report_a.json --metric ndcg@10 --max-drop 0.02 --metric recall@100 --max-drop 0.05
+warning: only 6 shared queries (< 30): the CI is wide, so the gate fails changes it cannot show to be harmless; see docs/GATE.md
+metric       baseline  candidate  diff (c-b)  ci95                     threshold  verdict  n
+ndcg@10      0.863597   0.488957   -0.374640  [-0.738854, +0.018236]   -0.020000  FAIL     6
+recall@100   1.000000   0.583333   -0.416667  [-0.750000, -0.083333]   -0.050000  FAIL     6
+gate: FAIL (0 of 2 metrics pass; candidate run_a vs baseline run_b)
+$ echo $?
+10
+```
+
+`ndcg@10` passes the first run by only 0.002 although the candidate is far better: six queries leave a wide interval. In the second run its interval contains 0, so a significance test would have passed that 0.37 drop; the gate fails it. Options: `--resamples N` (10000), `--seed S` (0), `--level L` (0.95), `--format table|json`, `--summary PATH` (appends a Markdown table, for `$GITHUB_STEP_SUMMARY`). Exit codes: 0 pass, 10 a metric failed, 1 usage, 2 input (for example reports made on different qrels).
+
+As a GitHub Action (`action.yml` at the repository root; it sets up Python, installs rageval from the action's own checkout and writes the job summary):
+
+```yaml
+- uses: AmitSinghOM/rag-evaluation-framework@<commit-sha>  # private until v0.1: inside this repo use ./
+  with:
+    baseline: reports/baseline.json
+    candidate: reports/candidate.json
+    metrics: ndcg@10:0.02,recall@100:0.05
+```
+
+The table `--summary` wrote for the failing run above (the action sends it to the job summary, with a heading, the bootstrap settings and any warning):
+
+| metric | baseline | candidate | diff | 95% CI | threshold | verdict | n |
+|---|---:|---:|---:|---|---:|---|---:|
+| ndcg@10 | 0.863597 | 0.488957 | -0.374640 | [-0.738854, +0.018236] | -0.020000 | **FAIL** | 6 |
+| recall@100 | 1.000000 | 0.583333 | -0.416667 | [-0.750000, -0.083333] | -0.050000 | **FAIL** | 6 |
+
+`.github/workflows/gate-selftest.yml` runs the action on every pull request: one job must pass (identical reports) and one must fail with exit 10 (a degraded candidate).
 
 ## Use
 

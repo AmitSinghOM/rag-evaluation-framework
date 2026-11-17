@@ -134,4 +134,4 @@ n_queries: 6
 | 1 | usage or argument error: missing option, unknown metric name, `--resamples < 1` |
 | 2 | input or format error: unreadable or undecodable file, malformed line, empty qrels, qrels mismatch, bad report file |
 | 3 | internal error (one line on stderr, no traceback) |
-| 10 | reserved for the Phase 2 regression gate |
+| 10 | `rageval gate`: at least one metric failed the non-inferiority check ([GATE.md](./GATE.md)) |
