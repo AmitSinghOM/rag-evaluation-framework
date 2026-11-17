@@ -2,7 +2,7 @@
 
 **Measures retrieval quality for RAG systems: Recall@K, Precision@K, MRR, NDCG with graded relevance, in pure Python with no runtime dependencies, and every value cross-checked against [ranx](https://github.com/AmenRa/ranx).**
 
-> **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 (loaders, report, CLI) in progress; nothing published.**
+> **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 loaders, versioned report with bootstrap CIs and the `rageval run` / `rageval compare` CLI done; nothing published.**
 > The package is not on PyPI. Install from source (below). The repository is private until v0.1.
 > Scope and the reasons for it: [docs/decisions/ADR-0001-v0.1-scope.md](./docs/decisions/ADR-0001-v0.1-scope.md).
 
@@ -12,10 +12,12 @@
 - Binary relevance (a set of ids) or graded relevance (a mapping `id -> grade`; grade 0 = judged not relevant).
 - Duplicate ids in a ranking count once, at their first position; later repeats are wasted slots and cannot inflate a score.
 - Every rule is written down in [docs/METRIC-DEFINITIONS.md](./docs/METRIC-DEFINITIONS.md) and locked by a test that scores 256 synthetic queries through both rageval and ranx and requires agreement within 1e-9.
+- Loaders for TREC qrels, TREC run files and a JSONL dataset format (`read_qrels`, `read_run`, `read_jsonl`); a malformed line fails with the file and line number.
+- `rageval run`: a versioned JSON report (`schema_version` 1, [docs/REPORT-SCHEMA.md](./docs/REPORT-SCHEMA.md), [docs/report.schema.json](./docs/report.schema.json)) with per-query scores, means and seeded bootstrap 95% confidence intervals; `rageval compare`: paired per-query differences with their CI, refusing reports made on different qrels. Means agree with `ranx.evaluate` on the same files within 1e-9.
 - Typed (`py.typed`), mypy strict, ruff, a 95% branch-coverage floor enforced in CI, CI on Python 3.11-3.14 (Ubuntu) and 3.13 (macOS).
 - A tiny in-memory loader (`load`) that turns `(query, retrieved, relevant)` triples into records.
 
-Not yet: file loaders, a report, a CLI, a regression gate, a grounding check. See [ROADMAP.md](./ROADMAP.md).
+Not yet: a regression gate with an exit code, a GitHub Action, a grounding check, JSONL input on the command line. See [ROADMAP.md](./ROADMAP.md).
 
 ## Install (from source)
 
@@ -24,6 +26,60 @@ pip install git+https://github.com/AmitSinghOM/rag-evaluation-framework.git
 ```
 
 Python 3.11 or newer. The install brings no third-party package.
+
+## Quickstart (Phase 1)
+
+From a clone of this repository, in a fresh virtual environment. The toy fixtures are six judged queries and two runs, small enough to check by hand ([examples/toy/README.md](./examples/toy/README.md)).
+
+```bash
+pip install .
+rageval run --qrels examples/toy/qrels.txt --run examples/toy/run_a.txt --metrics ndcg@10,recall@100,mrr --out report_a.json
+rageval run --qrels examples/toy/qrels.txt --run examples/toy/run_b.txt --metrics ndcg@10,recall@100,mrr --out report_b.json
+rageval compare report_a.json report_b.json
+```
+
+Real output of those lines (Python 3.13.12, run while writing this section; `pip list` showed `rageval==0.1.0a0` and nothing else):
+
+```text
+$ rageval run --qrels examples/toy/qrels.txt --run examples/toy/run_a.txt --metrics ndcg@10,recall@100,mrr --out report_a.json
+warning: query 'q99' is in the run but not in the qrels; ignored
+metric          mean  ci95                  n
+ndcg@10       0.4890  [0.1116, 0.8223]      6
+recall@100    0.5833  [0.1667, 0.9167]      6
+mrr           0.4583  [0.0833, 0.7500]      6
+wrote report_a.json (6 queries)
+$ rageval run --qrels examples/toy/qrels.txt --run examples/toy/run_b.txt --metrics ndcg@10,recall@100,mrr --out report_b.json
+metric          mean  ci95                  n
+ndcg@10       0.8636  [0.7406, 0.9866]      6
+recall@100    1.0000  [1.0000, 1.0000]      6
+mrr           0.8333  [0.6667, 1.0000]      6
+wrote report_b.json (6 queries)
+$ rageval compare report_a.json report_b.json
+metric             run_a         run_b    diff (b-a)  ci95
+ndcg@10         0.488957      0.863597     +0.374640  [+0.010254, +0.762443]
+recall@100      0.583333      1.000000     +0.416667  [+0.083333, +0.833333]
+mrr             0.458333      0.833333     +0.375000  [-0.083333, +0.750000]
+n_queries: 6
+```
+
+`report_a.json` starts:
+
+```json
+{
+  "schema_version": 1,
+  "rageval_version": "0.1.0a0",
+  "created_at": "2026-11-17T21:18:37Z",
+  "dataset": {
+    "qrels": {
+      "path": "examples/toy/qrels.txt",
+      "sha256": "e3905f1c83c664baeb122a9c6aed441ed0a218edf5d4bd7a884f8816958144d4"
+    },
+    "n_queries": 6,
+    "n_judged_relevant": 9
+  },
+```
+
+Metric names: `ndcg@K`, `recall@K`, `precision@K`, `mrr`, `mrr@K`. Options: `--resamples N` (1000), `--seed S` (0), `--name NAME`; `compare --format json`. Exit codes: 0 ok, 1 usage, 2 input or format error, 3 internal. A query in the qrels that the run never answers scores 0; a query in the run that is not judged is ignored and listed under `warnings`. Six queries give the wide intervals above by design; the point of the CI is that on a real query set it tells you whether a difference is noise.
 
 ## Use
 
