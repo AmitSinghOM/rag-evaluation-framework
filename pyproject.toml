@@ -54,6 +54,7 @@ dev = [
     "jsonschema==4.26.0",
     "types-jsonschema==4.26.0.20261006",
 ]
+dogfood = []  # scripts/ (SciFact fetch, BM25 baseline, manifest) are stdlib-only; reserved for their deps
 
 [tool.setuptools.packages.find]
 include = ["rageval*"]

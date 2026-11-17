@@ -1,0 +1,49 @@
+{
+  "dataset": "BEIR SciFact, test split (300 queries, 5183 documents, 339 judgements)",
+  "files": {
+    "bm25-degraded-shuffle-tail0.top100.run": {
+      "bytes": 1686193,
+      "format": "trec-run",
+      "lines": 30000,
+      "per_query": 100,
+      "queries": 300,
+      "sha256": "15d45ff55a7bc4529db1ee0d359f3490c9eedad3224a41d6b9fe1563e95cc8aa",
+      "tag": "bm25-degraded-shuffle-tail0"
+    },
+    "bm25-degraded-truncate20.top20.run": {
+      "bytes": 319384,
+      "format": "trec-run",
+      "lines": 6000,
+      "per_query": 20,
+      "queries": 300,
+      "sha256": "378b4f0fe4978bb9fb69a315f087a91588852e6db56c616fa4d56968fc96eb07",
+      "tag": "bm25-degraded-truncate20"
+    },
+    "bm25.top100.run": {
+      "bytes": 996193,
+      "format": "trec-run",
+      "lines": 30000,
+      "per_query": 100,
+      "queries": 300,
+      "sha256": "4bcd6371d8b87f83139d33039f07edd7acc95e57010263ca930f56c440a932ff",
+      "tag": "bm25"
+    },
+    "qrels.test.tsv": {
+      "bytes": 5702,
+      "format": "trec-qrels",
+      "lines": 339,
+      "queries": 300,
+      "sha256": "8b7315286f8dc823956025a1fc9c9ff0bfe142d7b409458ccd758cfa0713ccba"
+    }
+  },
+  "generated_with": [
+    "python scripts/fetch_scifact.py --dest .cache/scifact --trec-qrels examples/scifact/qrels.test.tsv",
+    "python scripts/bm25_baseline.py --dest .cache/scifact --out examples/scifact/bm25.top100.run",
+    "python scripts/bm25_baseline.py --dest .cache/scifact --degrade truncate:20 --out examples/scifact/bm25-degraded-truncate20.top20.run",
+    "python scripts/bm25_baseline.py --dest .cache/scifact --degrade shuffle-tail:0 --out examples/scifact/bm25-degraded-shuffle-tail0.top100.run",
+    "python scripts/make_manifest.py"
+  ],
+  "licence": "SciFact claims and evidence annotations (queries, qrels): CC BY 4.0; abstracts (corpus): ODC-By 1.0 (S2ORC); per https://github.com/allenai/scifact/blob/master/LICENSE.md. BEIR packaging code: Apache-2.0 (https://github.com/beir-cellar/beir). Evaluation data only, not training data.",
+  "source_sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+  "source_url": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip"
+}

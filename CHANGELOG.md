@@ -90,6 +90,18 @@ Nothing has been released or published yet.
   floor, CI on Python 3.11-3.14 (Ubuntu) and 3.13 (macOS), plus a job that
   proves a user install brings no third-party package.
 - `load()` keeps a grade mapping as a dict so graded data survives loading.
+- [C] SciFact dogfood fixtures in `examples/scifact/`: TREC qrels for the
+  BEIR SciFact test split (300 queries, 339 judgements), a deterministic
+  pure-Python BM25 run (`bm25.top100.run`, k1=0.9, b=0.4, byte-identical on
+  Python 3.11-3.14) and two documented degraded runs (`truncate:20`,
+  `shuffle-tail:0`) for later gate demos, plus `MANIFEST.json` with sha256,
+  counts, generator commands, source URL and licence.
+- [C] `scripts/fetch_scifact.py` (sha256-pinned download, TREC conversion),
+  `scripts/bm25_baseline.py` (`--degrade`, `--offline`) and
+  `scripts/make_manifest.py`; stdlib only, documented in `scripts/README.md`.
+  `tests/test_scifact_fixtures.py` checks every fixture against the manifest
+  and smoke-tests the scripts offline on a synthetic corpus. An empty
+  `dogfood` extra is reserved for script-only dependencies.
 
 ### Changed
 
