@@ -7,12 +7,12 @@ over labelled examples without caring about the source format.
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
-DocId = Hashable
-Relevance = Iterable[DocId] | Mapping[DocId, float]
-Triple = tuple[str, Sequence[DocId], Relevance]
+from .metrics import DocId, Relevance
+
+Triple = tuple[str, Sequence[DocId], Relevance[DocId]]
 
 
 @dataclass

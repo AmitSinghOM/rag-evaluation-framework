@@ -26,12 +26,15 @@ from __future__ import annotations
 
 from collections.abc import Hashable, Iterable, Mapping, Sequence
 from math import log2
+from typing import TypeVar
 
 DocId = Hashable
-Relevance = Iterable[DocId] | Mapping[DocId, float]
+D = TypeVar("D", bound=Hashable)
+# Binary relevance (any iterable of ids) or graded relevance (id -> grade).
+Relevance = Iterable[D] | Mapping[D, float]
 
 
-def _grades(relevant: Relevance) -> dict[DocId, float]:
+def _grades(relevant: Relevance[D]) -> dict[D, float]:
     """Normalise ``relevant`` to ``{id: grade}`` keeping only grades > 0."""
     if isinstance(relevant, Mapping):
         return {doc: float(grade) for doc, grade in relevant.items() if grade > 0}
@@ -43,18 +46,18 @@ def _check_k(k: int) -> None:
         raise ValueError("k must be a positive integer")
 
 
-def _top_k(retrieved: Sequence[DocId], k: int) -> list[DocId]:
+def _top_k(retrieved: Sequence[D], k: int) -> list[D]:
     """Return the first ``k`` retrieved ids, validating ``k``."""
     _check_k(k)
     return list(retrieved[:k])
 
 
-def _hits(top: Sequence[DocId], grades: Mapping[DocId, float]) -> int:
+def _hits(top: Sequence[D], grades: Mapping[D, float]) -> int:
     """Number of distinct relevant ids in ``top`` (a repeat is not a second hit)."""
     return sum(1 for doc in set(top) if doc in grades)
 
 
-def recall_at_k(retrieved: Sequence[DocId], relevant: Relevance, k: int) -> float:
+def recall_at_k(retrieved: Sequence[D], relevant: Relevance[D], k: int) -> float:
     """Fraction of relevant documents found within the top ``k``.
 
     Returns 0.0 when there are no relevant documents.
@@ -66,7 +69,7 @@ def recall_at_k(retrieved: Sequence[DocId], relevant: Relevance, k: int) -> floa
     return _hits(top, grades) / len(grades)
 
 
-def precision_at_k(retrieved: Sequence[DocId], relevant: Relevance, k: int) -> float:
+def precision_at_k(retrieved: Sequence[D], relevant: Relevance[D], k: int) -> float:
     """Fraction of the top ``k`` retrieved documents that are relevant.
 
     The denominator is ``k`` (fixed cutoff), matching the standard P@k,
@@ -77,7 +80,7 @@ def precision_at_k(retrieved: Sequence[DocId], relevant: Relevance, k: int) -> f
     return _hits(top, grades) / k
 
 
-def mrr(retrieved: Sequence[DocId], relevant: Relevance, k: int | None = None) -> float:
+def mrr(retrieved: Sequence[D], relevant: Relevance[D], k: int | None = None) -> float:
     """Reciprocal rank of the first relevant document.
 
     With ``k`` given, only the top-``k`` retrieved ids are searched
@@ -91,7 +94,7 @@ def mrr(retrieved: Sequence[DocId], relevant: Relevance, k: int | None = None) -
     return 0.0
 
 
-def dcg_at_k(retrieved: Sequence[DocId], relevant: Relevance, k: int) -> float:
+def dcg_at_k(retrieved: Sequence[D], relevant: Relevance[D], k: int) -> float:
     """Discounted cumulative gain at ``k``.
 
     Gain is the relevance grade (1 for binary relevance) and the discount
@@ -101,7 +104,7 @@ def dcg_at_k(retrieved: Sequence[DocId], relevant: Relevance, k: int) -> float:
     grades = _grades(relevant)
     top = _top_k(retrieved, k)
     total = 0.0
-    seen: set[DocId] = set()
+    seen: set[D] = set()
     for rank, doc in enumerate(top, start=1):
         if doc in seen:
             continue
@@ -111,7 +114,7 @@ def dcg_at_k(retrieved: Sequence[DocId], relevant: Relevance, k: int) -> float:
     return total
 
 
-def ndcg_at_k(retrieved: Sequence[DocId], relevant: Relevance, k: int) -> float:
+def ndcg_at_k(retrieved: Sequence[D], relevant: Relevance[D], k: int) -> float:
     """Normalised DCG at ``k``.
 
     The ideal ranking lists the relevant documents by descending grade,
