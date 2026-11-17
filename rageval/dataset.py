@@ -7,35 +7,41 @@ over labelled examples without caring about the source format.
 
 from __future__ import annotations
 
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Hashable, Iterable, List, Sequence, Set, Tuple
 
 DocId = Hashable
-Triple = Tuple[str, Sequence[DocId], Iterable[DocId]]
+Relevance = Iterable[DocId] | Mapping[DocId, float]
+Triple = tuple[str, Sequence[DocId], Relevance]
 
 
 @dataclass
 class Record:
-    """A single labelled evaluation example."""
+    """A single labelled evaluation example.
+
+    ``relevant`` is a set of ids for binary relevance or an ``id -> grade``
+    mapping for graded relevance (see ``rageval.metrics``).
+    """
 
     query: str
-    retrieved: List[DocId]
-    relevant: Set[DocId] = field(default_factory=set)
+    retrieved: list[DocId]
+    relevant: set[DocId] | dict[DocId, float] = field(default_factory=set)
 
 
-def load(rows: Iterable[Triple]) -> List[Record]:
+def load(rows: Iterable[Triple]) -> list[Record]:
     """Build a list of :class:`Record` from ``(query, retrieved, relevant)`` triples.
 
-    Retrieved order is preserved; relevant ids are collected into a set.
+    Retrieved order is preserved (duplicates included; the metrics ignore
+    repeats). A mapping of grades is kept as a dict so graded relevance
+    survives loading; any other collection of ids becomes a set.
     """
-    records: List[Record] = []
+    records: list[Record] = []
     for row in rows:
         query, retrieved, relevant = row
-        records.append(
-            Record(
-                query=query,
-                retrieved=list(retrieved),
-                relevant=set(relevant),
-            )
-        )
+        grades: set[DocId] | dict[DocId, float]
+        if isinstance(relevant, Mapping):
+            grades = dict(relevant)
+        else:
+            grades = set(relevant)
+        records.append(Record(query=query, retrieved=list(retrieved), relevant=grades))
     return records
