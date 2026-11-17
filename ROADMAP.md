@@ -1,31 +1,52 @@
 # rag-evaluation-framework — Build Roadmap
 
-Built in weekend-sized phases. Each phase ends in a tagged release, a short demo, and (where it fits) a blog post. **Do not start until AgentOS Phase 1 is shipped.**
+Built in small rounds. Each phase ends with CI green, the README status line updated, and a CHANGELOG entry. Scope and the reasons for it: [docs/decisions/ADR-0001-v0.1-scope.md](./docs/decisions/ADR-0001-v0.1-scope.md).
 
-> Rule: ship small, iterate visibly. Earn scope by finishing.
+> Rule: ship small, iterate visibly. Earn scope by finishing. No claim in the README that the code does not back.
 
-## Phase 0 — Metrics core  ·  ~1 wknd
-**Goal:** Implement Recall@K, Precision@K, MRR, NDCG with unit tests against known cases
+## Phase 0 — Metrics core, provably correct  ·  DONE 2026-11-18
+**Goal:** Recall@K, Precision@K, MRR, NDCG that agree with a reference implementation on every input.
 
-- [ ] (break into tasks when you start this phase)
+- [x] Recall@K, Precision@K, MRR, NDCG with hand-computed unit tests
+- [x] Duplicate ids count once, at their first position (was inflating recall above 1.0)
+- [x] Graded relevance (`id -> grade`) for DCG/NDCG; grade 0 = judged not relevant
+- [x] `mrr(..., k=)` cutoff
+- [x] Cross-check against ranx on 256 synthetic queries, agreement within 1e-9 (dev-only dependency)
+- [x] `docs/METRIC-DEFINITIONS.md`
+- [x] Hygiene: ruff, mypy strict, coverage floor, CI 3.11-3.14 + macOS, LICENSE, SECURITY, CONTRIBUTING, CHANGELOG, ADR-0001
 
-## Phase 1 — Dataset + retriever interface  ·  ~1 wknd
-**Goal:** Load labelled data; pluggable retriever; run end-to-end
+## Phase 1 — Loaders, report, CLI
+**Goal:** Evaluate a real run file against real labels from the command line and get a report you can diff.
 
-- [ ] (break into tasks when you start this phase)
+- [ ] Loaders: JSONL (`{"query_id", "retrieved": [...]}` plus labels), TREC qrels, TREC run files
+- [ ] Versioned JSON report: per-query scores, means, bootstrap confidence intervals
+- [ ] `rageval run` and `rageval compare`
+- [ ] Quickstart in the README, run live exactly as written
+- [ ] Repository public
 
-## Phase 2 — Hallucination detector  ·  ~1 wknd
-**Goal:** Grounding check on generated answers vs retrieved context
+## Phase 2 — Non-inferiority gate + GitHub Action
+**Goal:** Block a retrieval regression in CI without passing real regressions at ~50 queries.
 
-- [ ] (break into tasks when you start this phase)
+- [ ] `rageval gate`: fail unless the lower CI bound of (candidate − baseline) per metric is above `−max_drop`
+- [ ] Exit codes documented and tested
+- [ ] GitHub Action wrapping the gate
 
-## Phase 3 — Dashboard  ·  ~1 wknd
-**Goal:** Compare runs/retrievers visually
+## Phase 3 — Grounding check, EXPERIMENTAL
+**Goal:** Measure, not claim. A grounding signal is only described in the README once its calibration report exists.
 
-- [ ] (break into tasks when you start this phase)
+- [ ] Lexical-support baseline
+- [ ] Optional judge (Ollama or a free-tier API), clearly optional
+- [ ] Calibration report against ≥ 50 human-written labels from a BEIR SciFact dogfood run
+- [ ] README wording taken from the report, labelled experimental
+
+## Phase 4 — Release
+**Goal:** v0.1 tagged; PyPI only on an explicit go and preferably after one named consumer exists.
+
+- [ ] Release workflow proven on TestPyPI
+- [ ] v0.1.0 tag and GitHub release
+- [ ] PyPI publish (decision deferred; see ADR-0001)
 
 ## Definition of done (every phase)
-1. Tests pass, CI green.
-2. README status updated.
-3. Tagged release.
-4. Blog post drafted if it maps to one.
+1. Tests pass, CI green on every supported interpreter.
+2. README status line updated; no unbacked claims.
+3. CHANGELOG entry.

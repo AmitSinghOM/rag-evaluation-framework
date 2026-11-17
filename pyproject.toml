@@ -1,20 +1,99 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "rageval"
-version = "0.0.1"
-description = "A framework for measuring retrieval quality (Recall@K, Precision@K, MRR, NDCG)."
+version = "0.1.0a0"
+description = "Retrieval-quality evaluation for RAG systems: Recall@K, Precision@K, MRR, NDCG with graded relevance, cross-checked against ranx, no runtime dependencies."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Amit Singh" }]
+keywords = ["rag", "retrieval", "evaluation", "ir-metrics", "ndcg", "recall", "mrr"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
+# Runtime dependencies stay empty on purpose: the metrics are pure Python and
+# a user installing rageval must never pull NumPy, numba, pandas or scipy.
+# tests/test_runtime_deps.py locks this.
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/AmitSinghOM/rag-evaluation-framework"
+Changelog = "https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/CHANGELOG.md"
+Issues = "https://github.com/AmitSinghOM/rag-evaluation-framework/issues"
+
 [project.optional-dependencies]
-dev = ["pytest"]
+# ranx is the reference implementation the metrics are checked against
+# (tests/test_ranx_crosscheck.py). It is DEV ONLY: it pulls numba, pandas and
+# scipy, which must never reach a user of rageval.
+dev = [
+    "pytest==9.2.0",
+    "pytest-cov==7.1.0",
+    "ruff==0.17.5",
+    "mypy==2.4.1",
+    "ranx==0.3.21",
+]
 
 [tool.setuptools.packages.find]
 include = ["rageval*"]
 
+[tool.setuptools.package-data]
+rageval = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "error",
+    # The ranx/numba stack is a dev-only reference; its own warnings are not ours.
+    # ranx 0.3.21 ships string literals with invalid escapes (SyntaxWarning on
+    # 3.12+, DeprecationWarning on 3.11), raised at first byte-compile; the
+    # module field is a regex matched against the dotted name or the file path.
+    "ignore::SyntaxWarning:.*ranx.*",
+    "ignore::DeprecationWarning:.*ranx.*",
+    "ignore::numba.core.errors.NumbaWarning",
+    "ignore::DeprecationWarning:.*(numba|pandas|seaborn|scipy).*",
+]
+
+[tool.coverage.run]
+source = ["rageval"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 95
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "S", "UP", "I"]
+# S101: asserts are the point in tests. S311: tests use seeded random for fixtures.
+per-file-ignores = { "tests/*" = ["S101", "S311"] }
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["rageval", "tests"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+# ranx has no type information; it is only imported by the cross-check test.
+module = ["ranx", "ranx.*"]
+ignore_missing_imports = true
