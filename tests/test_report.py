@@ -276,5 +276,22 @@ def test_compare_refuses_different_qrels_different_queries_or_nothing_shared(
         compare(evaluate(read_qrels(TOY / "qrels.txt"), {}, ["mrr"]), only_mrr)
     broken = a.to_dict()
     del broken["per_query"]["q4"]["mrr"]
-    with pytest.raises(ReportError, match="per_query is missing 'mrr'"):
+    with pytest.raises(ReportError, match=r"a report: per_query\['q4'\]\['mrr'\] is None"):
         compare(Report.from_dict(broken), _report("run_b.txt"))
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [(float("nan"), "nan"), (float("inf"), "inf"), ("0.5", "'0.5'"), (True, "True")],
+)
+def test_compare_refuses_a_non_finite_or_non_numeric_per_query_value(
+    value: object, shown: str
+) -> None:
+    # Same rule as the gate. On the unfixed code a NaN row gave "+nan" with exit 0
+    # and a string row crashed with TypeError (exit 3, "internal error").
+    a = _report("run_a.txt")
+    edited = a.to_dict()
+    edited["per_query"]["q2"]["recall@100"] = value
+    expected = rf"b report: per_query\['q2'\]\['recall@100'\] is {shown}"
+    with pytest.raises(ReportError, match=expected):
+        compare(a, Report.from_dict(edited))

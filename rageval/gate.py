@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .report import PLACES, SCHEMA_VERSION, Report, ReportError, RunInfo
+from .report import PLACES, SCHEMA_VERSION, Report, ReportError, RunInfo, per_query_values
 from .stats import mean, paired_diff_ci
 
 SMALL_N = 30  # below this many shared queries the gate warns that the CI is wide
@@ -144,25 +144,6 @@ class GateResult:
         return "\n".join(lines) + "\n"
 
 
-def _values(report: Report, which: str, name: str, qids: list[str]) -> list[float]:
-    """The per-query column for ``name``; ``ReportError`` on a gap or a non-finite value."""
-    values: list[float] = []
-    for qid in qids:
-        # The file is untrusted JSON: Python's json accepts NaN and Infinity, and a
-        # hand-edited row can hold anything, so check the type as well as finiteness.
-        value: object = report.per_query[qid].get(name)
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, int | float)
-            or not math.isfinite(value)
-        ):
-            raise ReportError(
-                f"{which} report: per_query[{qid!r}][{name!r}] is {value!r}, not a finite number"
-            )
-        values.append(float(value))
-    return values
-
-
 def gate(
     baseline: Report,
     candidate: Report,
@@ -201,8 +182,8 @@ def gate(
         raise ReportError("the two reports share no query id")
     verdicts: dict[str, MetricVerdict] = {}
     for name, max_drop in max_drops.items():
-        base = _values(baseline, "baseline", name, qids)
-        cand = _values(candidate, "candidate", name, qids)
+        base = per_query_values(baseline, "baseline", name, qids)
+        cand = per_query_values(candidate, "candidate", name, qids)
         lo, hi = paired_diff_ci(base, cand, resamples=resamples, seed=seed, level=level)
         verdicts[name] = MetricVerdict(
             baseline=mean(base),
