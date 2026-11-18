@@ -844,16 +844,38 @@ def test_confusion_metrics_on_empty_counts_are_zero() -> None:
 # ----------------------------------------------------------------- isolation
 
 
-def test_run_compare_gate_paths_never_import_grounding() -> None:
+def test_run_compare_gate_paths_never_import_grounding(tmp_path: Path) -> None:
+    # The three commands really run (not just --version), so a stray import on
+    # any of their paths is caught; the sentinel proves the probe itself ran.
+    toy = ROOT / "examples" / "toy"
     probe = (
-        "import sys, rageval, rageval.cli; "
-        "from rageval.cli import main; main(['--version']); "
-        "print('rageval.grounding' in sys.modules)"
+        "import sys; from rageval.cli import main; "
+        f"q, a, b, out = {str(toy / 'qrels.txt')!r}, {str(toy / 'run_a.txt')!r}, "
+        f"{str(toy / 'run_b.txt')!r}, {str(tmp_path)!r}; "
+        "assert main(['run', '--qrels', q, '--run', a, '--metrics', 'mrr', '--out', out + '/a.json']) == 0; "  # noqa: E501
+        "assert main(['run', '--qrels', q, '--run', b, '--metrics', 'mrr', '--out', out + '/b.json']) == 0; "  # noqa: E501
+        "assert main(['compare', out + '/a.json', out + '/b.json']) == 0; "
+        "assert main(['gate', '--baseline', out + '/a.json', '--candidate', out + '/b.json', "
+        "'--metric', 'mrr', '--max-drop', '0.5', '--resamples', '50']) == 0; "
+        "print('probe-ran', 'rageval.grounding' in sys.modules)"
     )
     result = subprocess.run(  # noqa: S603 - fixed interpreter, fixed program text
         [sys.executable, "-c", probe], capture_output=True, text=True, check=True, cwd=ROOT
     )
-    assert result.stdout.strip().endswith("False")
+    assert result.stdout.strip().endswith("probe-ran False")
+    # And the inverse: the ground command does import it, so the sentinel is not vacuous.
+    inverse = (
+        "import sys; from rageval.cli import main; "
+        f"main(['ground', 'score', '--pack', {str(tmp_path / 'none.jsonl')!r}, '--out', 'x'])"
+    )
+    result = subprocess.run(  # noqa: S603 - fixed interpreter, fixed program text
+        [sys.executable, "-c", inverse + "; print('rageval.grounding' in sys.modules)"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=ROOT,
+    )
+    assert result.stdout.strip().endswith("True")
 
 
 def test_ground_help_lists_the_three_subcommands(capsys: pytest.CaptureFixture[str]) -> None:
