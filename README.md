@@ -2,8 +2,8 @@
 
 **Measures retrieval quality for RAG systems: Recall@K, Precision@K, MRR, NDCG with graded relevance, in pure Python with no runtime dependencies, and every value cross-checked against [ranx](https://github.com/AmenRa/ranx).**
 
-> **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 loaders, versioned report with bootstrap CIs and the `rageval run` / `rageval compare` CLI done; Phase 2 non-inferiority regression gate (`rageval gate`) and its GitHub Action done; Phase 3 grounding check is an experiment awaiting its calibration report; release workflow written (a tag uploads to TestPyPI only) but not yet run; nothing published.**
-> The package is not on PyPI or TestPyPI. Install from source (below). The repository is private until v0.1.
+> **Status (2026-11-18, v0.1.0): Phase 0 metrics corrected and reference-checked; Phase 1 loaders, versioned report with bootstrap CIs and the `rageval run` / `rageval compare` CLI done; Phase 2 non-inferiority regression gate (`rageval gate`) and its GitHub Action done; Phase 3 grounding check is an experiment awaiting its calibration report; release workflow proven on TestPyPI with the `v0.1.0a0` rehearsal; an independent review before v0.1.0 is recorded in [docs/reviews/2026-11-18-v0.1-review.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/reviews/2026-11-18-v0.1-review.md).**
+> The package is on [TestPyPI](https://test.pypi.org/project/rag-evaluation-framework/) only; the real PyPI waits for an explicit go ([ADR-0001](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/decisions/ADR-0001-v0.1-scope.md), item 5). Install from source or from a release wheel (below).
 > Scope and the reasons for it: [docs/decisions/ADR-0001-v0.1-scope.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/decisions/ADR-0001-v0.1-scope.md).
 
 ## What works today
@@ -16,11 +16,11 @@
 - `rageval run`: a versioned JSON report (`schema_version` 1, [docs/REPORT-SCHEMA.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/REPORT-SCHEMA.md), [docs/report.schema.json](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/report.schema.json)) with per-query scores, means and seeded bootstrap 95% confidence intervals; `rageval compare`: paired per-query differences with their CI, refusing reports made on different qrels. Means agree with `ranx.evaluate` on the same files within 1e-9.
 - `rageval gate`: a non-inferiority regression gate for CI. Per metric it fails (exit 10) unless the lower bound of the paired bootstrap CI of candidate minus baseline is above `-max_drop`; a composite GitHub Action (`action.yml`) wraps it. See [Regression gate](#regression-gate) and [docs/GATE.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/GATE.md).
 - `rageval run --dataset data.jsonl`: one JSONL file (judgments and ranking per query) instead of a TREC qrels file plus a run file. `python -m rageval` works the same as `rageval`.
-- A release workflow ([docs/RELEASING.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/RELEASING.md)): a `v*` tag builds the sdist and wheel, uploads them to TestPyPI only and attaches them to a GitHub Release; the real PyPI is reached only by a manual run on a tag with `confirm: publish`. Uploads use Trusted Publishing (OIDC), so no token is stored anywhere. It has not been run yet. CI builds the wheel, installs it in a clean venv and runs the quickstart below on every change.
+- A release workflow ([docs/RELEASING.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/RELEASING.md)): a `v*` tag builds the sdist and wheel, uploads them to TestPyPI only and attaches them to a GitHub Release; the real PyPI is reached only by a manual run on a tag with `confirm: publish`. Uploads use Trusted Publishing (OIDC), so no token is stored anywhere. Proven with the `v0.1.0a0` rehearsal (TestPyPI upload and GitHub pre-release). CI builds both distributions, checks what they contain, installs the wheel in a clean venv and runs the quickstart below on every change.
 - Typed (`py.typed`), mypy strict, ruff, a 95% branch-coverage floor enforced in CI, CI on Python 3.11-3.14 (Ubuntu) and 3.13 (macOS).
 - A tiny in-memory loader (`load`) that turns `(query, retrieved, relevant)` triples into records.
 
-Not yet: a published package. A grounding check exists only as an experiment (below). See [ROADMAP.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/ROADMAP.md).
+Not yet: a package on the real PyPI. A grounding check exists only as an experiment (below). See [ROADMAP.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/ROADMAP.md).
 
 ## Grounding (experimental)
 
@@ -28,14 +28,15 @@ Not yet: a published package. A grounding check exists only as an experiment (be
 
 ## Install
 
-rageval is not on PyPI yet. Install from source, or, once a version is tagged, from the wheel attached to its [GitHub Release](https://github.com/AmitSinghOM/rag-evaluation-framework/releases) (none is tagged yet). The package you install is named `rag-evaluation-framework`; you import `rageval` and run `rageval`.
+rageval is not on the real PyPI. Install from source, from the wheel attached to a [GitHub Release](https://github.com/AmitSinghOM/rag-evaluation-framework/releases), or from TestPyPI (`--no-deps` keeps pip from resolving anything else on an index where anyone can upload any name). The package you install is named `rag-evaluation-framework`; you import `rageval` and run `rageval`.
 
 ```bash
-pip install git+https://github.com/AmitSinghOM/rag-evaluation-framework.git
-# or, from a release:  pip install rag_evaluation_framework-<version>-py3-none-any.whl
+pip install git+https://github.com/AmitSinghOM/rag-evaluation-framework.git@v0.1.0
+# or, from a release:  pip install rag_evaluation_framework-0.1.0-py3-none-any.whl
+# or, from TestPyPI:   pip install --index-url https://test.pypi.org/simple/ --no-deps rag-evaluation-framework==0.1.0
 ```
 
-Python 3.11 or newer. The install brings no third-party package. Check it with `rageval --version` or `python -m rageval --version` (prints `rageval 0.1.0a0`).
+Python 3.11 or newer. The install brings no third-party package. Check it with `rageval --version` or `python -m rageval --version` (prints `rageval 0.1.0`).
 
 ## Quickstart (Phase 1)
 
@@ -56,7 +57,7 @@ base=https://raw.githubusercontent.com/AmitSinghOM/rag-evaluation-framework/v0.1
 for f in qrels.txt run_a.txt run_b.txt dataset.jsonl; do curl -fsSL "$base/$f" -o "examples/toy/$f"; done
 ```
 
-Real output of those lines (Python 3.13.12, run while writing this section; `pip list` showed `rag-evaluation-framework==0.1.0a0` and nothing else):
+Real output of those lines (Python 3.13.12, run while writing this section; `pip list` showed `rag-evaluation-framework==0.1.0` and nothing else):
 
 ```text
 $ rageval run --qrels examples/toy/qrels.txt --run examples/toy/run_a.txt --metrics ndcg@10,recall@100,mrr --out report_a.json
@@ -85,8 +86,8 @@ n_queries: 6
 ```json
 {
   "schema_version": 1,
-  "rageval_version": "0.1.0a0",
-  "created_at": "2026-11-17T21:18:37Z",
+  "rageval_version": "0.1.0",
+  "created_at": "2026-11-18T03:41:05Z",
   "dataset": {
     "qrels": {
       "path": "examples/toy/qrels.txt",
@@ -116,7 +117,7 @@ recall@100    1.0000  [1.0000, 1.0000]      6
 mrr           0.8333  [0.6667, 1.0000]      6
 wrote report_j.json (6 queries)
 $ python -m rageval --version
-rageval 0.1.0a0
+rageval 0.1.0
 ```
 
 The report layout is unchanged (`schema_version` 1). For a JSONL input, `dataset.qrels.path` and `run.path` are both the JSONL path; `dataset.qrels.sha256` hashes the judgments only, so two JSONL files with the same labels and different rankings can be compared and gated. `compare` and `gate` refuse to pair a JSONL report with a TREC-file report, because their hashes differ.

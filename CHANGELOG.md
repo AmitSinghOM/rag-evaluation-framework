@@ -3,9 +3,65 @@
 All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-Nothing has been released or published yet.
+The pre-release `0.1.0a0` was tagged on 2026-11-18 as a rehearsal of the
+release workflow (TestPyPI + GitHub Release); `0.1.0` is the first release.
+Nothing is on the real PyPI (ADR-0001 defers it).
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-11-18
+
+Everything below landed in six pull requests between `be13202` (the Phase 0
+skeleton) and `187d722`, then an independent review
+(`docs/reviews/2026-11-18-v0.1-review.md`) fixed what follows under
+**Fixed (review)** and **Changed (review)**.
+
+### Fixed (review)
+
+- `rageval ground` judges never follow an HTTP redirect. urllib's default
+  opener followed a 301/302/303 to any host, as a GET, with the
+  `Authorization: Bearer <key>` header still attached; a judge endpoint that
+  redirected would have sent the key elsewhere. The error now names the
+  Location and the key is sent only to the `--base-url` host.
+- Loaders read UTF-8 with or without a BOM. A qrels file saved by a Windows
+  editor made the first query id `'\ufeffq1'`, so the run's `q1` was
+  "not in the qrels" and silently scored 0. A non-UTF-8 file is a
+  `LoaderError` naming the file (exit 2) instead of a bare codec message.
+- A grade that is not a finite number is an error everywhere: the metrics
+  raise `ValueError`, `read_jsonl` reports `path:line`. `json.loads` accepts
+  `Infinity` and `NaN`; `{"d1": Infinity}` had produced a report with
+  `"ndcg@10": NaN` (exit 0) that the schema forbids and `compare`/`gate`
+  refuse, and `NaN` had silently counted as not relevant.
+- `rageval compare` checks per-query values the way `gate` does: a `NaN` row
+  printed `+nan` with exit 0 and a string row crashed with exit 3; both are
+  exit 2 now (`rageval.report.per_query_values`, shared by both commands).
+- `rageval ground prepare` refuses to overwrite a `README.md` next to
+  `--out` that is not a labelling-pack README (it replaced a project's own
+  README when run in the project root). The check runs before any file is
+  written.
+- Metric keys in a report are canonical (`ndcg@010` is stored as `ndcg@10`),
+  so `rageval gate --metric ndcg@10` finds it; two spellings compute once.
+- The sdist carries `examples/toy/` and no `tests/` (`MANIFEST.in`); the
+  `0.1.0a0` sdist had shipped the tests without the files they need and no
+  examples. CI's build job checks the member lists of both distributions.
+- `SECURITY.md` describes what the code touches (files named on the command
+  line, the experiment's network calls, key handling, the Action's input
+  path); it still said rageval reads nothing from disk or the network.
+- README links are absolute (GitHub blob URLs) so they resolve on the PyPI
+  project page; a test checks every linked file exists.
+- The grounding import lock runs `run`, `compare` and `gate` for real, not
+  only `--version`.
+
+### Changed (review)
+
+- `build` and `twine` are pinned in `requirements-release.txt` and both the
+  CI build job and the release build job install from it, so Dependabot
+  proposes their updates (pins typed into a workflow step are invisible to
+  it).
+- README: a no-clone quickstart (fetch the four toy files from the tag's raw
+  URLs into `examples/toy/`); status line and install section updated for
+  `0.1.0`; the Ollama timeout message no longer names a `--timeout` flag
+  that does not exist.
 
 ### Added
 
@@ -22,7 +78,7 @@ Nothing has been released or published yet.
   see `docs/REPORT-SCHEMA.md`.
 - [R] `python -m rageval` (`rageval/__main__.py`), the same command line as
   `rageval`; `rageval --version` and `python -m rageval --version` print
-  `rageval 0.1.0a0`. A test locks `pyproject.toml`'s version to
+  the version (`rageval 0.1.0` at this release). A test locks `pyproject.toml`'s version to
   `rageval.__version__`.
 - [R] Release workflow `.github/workflows/release.yml`: a `v*` tag builds
   the sdist and wheel (`python -m build`, `twine check --strict`), checks
@@ -175,7 +231,7 @@ Nothing has been released or published yet.
   too similar to `rag-eval` on PyPI. `import rageval`, the `rageval`
   command and `python -m rageval` do not change.
 - `requires-python` is now `>=3.11` (was `>=3.9`; 3.9 and 3.10 are
-  end-of-life). Version is `0.1.0a0`.
+  end-of-life). Version is `0.1.0` (`0.1.0a0` was the TestPyPI rehearsal).
 - `k <= 0` now raises `ValueError` for every metric, also when `relevant`
   is empty (previously `recall_at_k` and `ndcg_at_k` returned `0.0` first).
 
@@ -185,3 +241,6 @@ Nothing has been released or published yet.
   NDCG. The first occurrence counts; later repeats are ignored at their
   position (they earn nothing and do not move later documents up a rank).
   Before this fix `recall_at_k` could exceed `1.0`.
+
+[Unreleased]: https://github.com/AmitSinghOM/rag-evaluation-framework/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/AmitSinghOM/rag-evaluation-framework/compare/be13202...v0.1.0

@@ -133,7 +133,11 @@ def test_help_and_version_exit_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--help"]) == EXIT_OK
     assert "{run,compare,gate,ground}" in capsys.readouterr().out
     assert main(["--version"]) == EXIT_OK
-    assert capsys.readouterr().out.startswith("rageval 0.1.0a0")
+    assert capsys.readouterr().out == f"rageval {__version__}\n"
+    # The README quotes the printed version; it must be this release's.
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert f"(prints `rageval {__version__}`)" in readme
+    assert "0.1.0a0" not in readme.split("## Install", 1)[1]
 
 
 def test_empty_qrels_file_is_an_input_error(
