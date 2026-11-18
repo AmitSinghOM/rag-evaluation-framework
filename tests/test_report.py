@@ -63,6 +63,16 @@ def test_parse_metric_rejects_bad_names_listing_valid_forms(name: str) -> None:
         parse_metric(name)
 
 
+def test_report_keys_are_canonical_so_gate_metric_names_match() -> None:
+    # "ndcg@010" parses as k=10 but was stored under the spelling given, so
+    # `rageval gate --metric ndcg@10` could not find it in the report.
+    report = evaluate(read_qrels(TOY / "qrels.txt"), read_run(TOY / "run_b.txt"), ["ndcg@010"])
+    assert list(report.metrics) == ["ndcg@10"]
+    assert list(report.per_query["q1"]) == ["ndcg@10"]
+    both = evaluate(read_qrels(TOY / "qrels.txt"), {}, ["mrr@05", "mrr@5", "mrr"])
+    assert list(both.metrics) == ["mrr@5", "mrr"]  # one computation for the two spellings
+
+
 # ---------------------------------------------------------------- evaluate
 
 
