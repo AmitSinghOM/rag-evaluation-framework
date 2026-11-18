@@ -78,9 +78,9 @@ jobs:
           python-version: "3.13"
 
       - name: Build and check the distributions
-        # Same commands and pins as .github/workflows/release.yml.
+        # Same command as .github/workflows/release.yml; pins in requirements-release.txt.
         run: |
-          python -m pip install --quiet --disable-pip-version-check build==1.6.1 twine==7.0.0
+          python -m pip install --quiet --disable-pip-version-check -r requirements-release.txt
           python -m build
           twine check --strict dist/*
           ls -l dist

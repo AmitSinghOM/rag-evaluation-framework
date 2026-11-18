@@ -17,9 +17,10 @@ TestPyPI upload and a GitHub Release.
 | Manual run on a `v*` tag, `confirm` = `publish` | yes | no | no | yes |
 | Manual run, any other `confirm`, or `publish` on a branch | fails at once | no | no | no |
 
-`build` runs `python -m build` and `twine check --strict` (build 1.6.1,
-twine 7.0.0) on Python 3.13 and hands `dist/` to the other jobs as an
-artifact. `github-release` creates the release from the tag with both files
+`build` runs `python -m build` and `twine check --strict` (both tools pinned
+in `requirements-release.txt`, which Dependabot's pip updater reads; a pin
+written inline in a workflow step would be invisible to it) on Python 3.13
+and hands `dist/` to the other jobs as an artifact. `github-release` creates the release from the tag with both files
 attached (`gh release create --verify-tag --generate-notes`, marked
 pre-release when the version ends in `aN`, `bN`, `rcN` or `.devN`). Only
 `testpypi` and `pypi` get `id-token: write`; only `github-release` gets

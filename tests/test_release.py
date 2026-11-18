@@ -97,3 +97,19 @@ def test_sdist_rules_ship_the_toy_examples_and_no_tests() -> None:
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "tar tzf dist/*.tar.gz" in ci and "examples/toy/qrels.txt" in ci
     assert "'^(tests/|examples/scifact/|\\.github/)'" in ci
+
+
+def test_build_tools_are_pinned_where_dependabot_can_see_them() -> None:
+    # Dependabot's pip updater reads *.txt requirements files at the root (and
+    # pyproject), not version pins typed into a workflow `run:` step.
+    pins = [
+        line
+        for line in (ROOT / "requirements-release.txt").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert [p.split("==")[0] for p in pins] == ["build", "twine"]
+    assert all(re.fullmatch(r"\w+==\d+(\.\d+)+", p) for p in pins), pins
+    for name in ("ci.yml", "release.yml"):
+        text = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        assert "-r requirements-release.txt" in text, name
+        assert not re.search(r"pip install .*\b(build|twine)==", text), name
