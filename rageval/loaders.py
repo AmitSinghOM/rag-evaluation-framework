@@ -45,12 +45,22 @@ class LoaderError(ValueError):
 
 
 def _lines(path: str | Path) -> Iterator[tuple[int, str]]:
-    """Yield ``(line_no, stripped_line)`` for every non-blank line."""
-    with Path(path).open(encoding="utf-8") as fh:
-        for line_no, raw in enumerate(fh, start=1):
-            line = raw.strip()
-            if line:
-                yield line_no, line
+    """Yield ``(line_no, stripped_line)`` for every non-blank line.
+
+    UTF-8 with or without a BOM (Windows editors write one; ``str.strip`` does
+    not remove it, so it would silently become part of the first query id).
+    Any other encoding is a :class:`LoaderError` naming the file.
+    """
+    try:
+        with Path(path).open(encoding="utf-8-sig") as fh:
+            for line_no, raw in enumerate(fh, start=1):
+                line = raw.strip()
+                if line:
+                    yield line_no, line
+    except UnicodeDecodeError as exc:
+        raise LoaderError(
+            path, 0, f"not UTF-8 ({exc.reason} at byte {exc.start}); re-save the file as UTF-8"
+        ) from None
 
 
 def read_qrels(path: str | Path) -> Qrels:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -151,3 +152,32 @@ def test_malformed_jsonl_line_names_file_and_line(tmp_path: Path, line: str, rea
     with pytest.raises(LoaderError, match=reason) as info:
         read_jsonl(path)
     assert str(info.value).startswith(f"{path}:2: ")
+
+
+# ---------------------------------------------------------------- encoding
+
+
+def test_a_utf8_bom_is_not_part_of_the_first_query_id(tmp_path: Path) -> None:
+    # Windows editors prepend U+FEFF; str.strip() does not remove it, so on the
+    # unfixed code the first qrels query became '\ufeffq1', the run's 'q1' was
+    # "not in the qrels" and the query silently scored 0.
+    qrels = tmp_path / "q.txt"
+    qrels.write_bytes(b"\xef\xbb\xbfq1 0 d1 1\nq2 0 d2 1\n")
+    run = tmp_path / "r.txt"
+    run.write_bytes(b"\xef\xbb\xbfq1 Q0 d1 1 1.0 t\nq2 Q0 d2 1 1.0 t\n")
+    jsonl = tmp_path / "d.jsonl"
+    jsonl.write_bytes(b'\xef\xbb\xbf{"query_id": "q1", "retrieved": ["d1"], "relevant": ["d1"]}\n')
+    assert list(read_qrels(qrels)) == ["q1", "q2"]
+    assert list(read_run(run)) == ["q1", "q2"]
+    assert list(read_jsonl(jsonl)[0]) == ["q1"]
+
+
+@pytest.mark.parametrize("reader", [read_qrels, read_run, read_jsonl])
+def test_a_non_utf8_file_is_a_loader_error_naming_the_file(
+    tmp_path: Path, reader: Callable[[Path], object]
+) -> None:
+    path = tmp_path / "latin1.txt"
+    path.write_bytes(b"q1 0 d\xe9 1\n")
+    with pytest.raises(LoaderError, match="not UTF-8") as info:
+        reader(path)
+    assert str(info.value).startswith(f"{path}:0: ")
