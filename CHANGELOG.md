@@ -9,6 +9,44 @@ Nothing has been released or published yet.
 
 ### Added
 
+- [R] `rageval run --dataset FILE.jsonl --metrics ... --out ...`: score one
+  JSONL file (the format `read_jsonl` reads) instead of `--qrels` plus
+  `--run`. Giving both kinds of input, or neither, is a usage error (exit 1);
+  an empty or malformed JSONL file is an input error (exit 2). The report
+  keeps `schema_version` 1 unchanged: for JSONL, `dataset.qrels.path` and
+  `run.path` are the JSONL path, `run.sha256` hashes the file and
+  `dataset.qrels.sha256` hashes the judgments alone
+  (`FileRef.of_judgments`), so two JSONL files with the same labels and
+  different rankings can be compared and gated. Renaming to
+  `dataset.source` was rejected because it would break schema 1 readers;
+  see `docs/REPORT-SCHEMA.md`.
+- [R] `python -m rageval` (`rageval/__main__.py`), the same command line as
+  `rageval`; `rageval --version` and `python -m rageval --version` print
+  `rageval 0.1.0a0`. A test locks `pyproject.toml`'s version to
+  `rageval.__version__`.
+- [R] Release workflow `.github/workflows/release.yml`: a `v*` tag builds
+  the sdist and wheel (`python -m build`, `twine check --strict`), checks
+  the tag equals the package version, uploads to TestPyPI (environment
+  `testpypi`) and attaches both files to a GitHub Release. The real PyPI
+  job (environment `pypi`) runs only from a manual run on a tag with
+  `confirm: publish`; a tag alone never reaches it. Trusted Publishing
+  (OIDC) only, no stored token; every action pinned to a commit SHA.
+  `tests/test_release.py` locks the pins, the upload jobs and their
+  conditions. Not run yet.
+- [R] `docs/RELEASING.md`: what runs when, the one-time Trusted Publisher
+  and environment setup, how to cut and check a release, and the name
+  check behind the rename below.
+- [R] CI job `build`: builds and checks both distributions, installs the
+  wheel in a clean venv, requires `pip list` to show only
+  `rag-evaluation-framework`, checks
+  both `--version` forms and runs the toy quickstart, the JSONL run and the
+  gate from the installed wheel.
+- [R] `.github/dependabot.yml`: weekly updates for GitHub Actions
+  (workflows and `action.yml`) and pip (the pinned `dev` extra).
+- [R] README: install section says the package is not on PyPI (source or a
+  GitHub Release wheel), JSONL quickstart with real output,
+  `python -m rageval`.
+
 - [G] `rageval gate --baseline B --candidate C --metric NAME --max-drop X
   [--metric ... --max-drop ...] [--resamples N --seed S --level L]
   [--format table|json] [--summary PATH]`: a non-inferiority regression
@@ -105,6 +143,10 @@ Nothing has been released or published yet.
 
 ### Changed
 
+- [R] The distribution (pip) name is now `rag-evaluation-framework`, was
+  `rageval`: `rageval` is taken on TestPyPI (another publisher, 2023) and
+  too similar to `rag-eval` on PyPI. `import rageval`, the `rageval`
+  command and `python -m rageval` do not change.
 - `requires-python` is now `>=3.11` (was `>=3.9`; 3.9 and 3.10 are
   end-of-life). Version is `0.1.0a0`.
 - `k <= 0` now raises `ValueError` for every metric, also when `relevant`

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,17 @@ class FileRef:
         """Reference a file by the path as given plus the SHA-256 of its bytes."""
         digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
         return cls(path=str(path), sha256=digest)
+
+    @classmethod
+    def of_judgments(cls, path: str | Path, qrels: Mapping[str, Mapping[str, float]]) -> FileRef:
+        """Reference the judgments read from ``path`` by the SHA-256 of their canonical JSON.
+
+        For a JSONL dataset, which holds the judgments and a run in one file:
+        two files with the same judgments and different rankings get the same
+        hash, so ``compare`` and ``gate`` accept their reports.
+        """
+        canonical = json.dumps(qrels, sort_keys=True, separators=(",", ":"))
+        return cls(path=str(path), sha256=hashlib.sha256(canonical.encode("utf-8")).hexdigest())
 
 
 @dataclass(frozen=True)

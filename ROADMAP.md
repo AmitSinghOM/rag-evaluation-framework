@@ -42,6 +42,8 @@ Built in small rounds. Each phase ends with CI green, the README status line upd
 ## Phase 4 — Release
 **Goal:** v0.1 tagged; PyPI only on an explicit go and preferably after one named consumer exists.
 
+- [x] Release workflow, CI build-and-install check and Dependabot written ([docs/RELEASING.md](./docs/RELEASING.md)); not yet run against an index
+- [x] Distribution name `rag-evaluation-framework` (`rageval` is taken on TestPyPI and too close to `rag-eval` on PyPI; import name and command stay `rageval`)
 - [ ] Release workflow proven on TestPyPI
 - [ ] v0.1.0 tag and GitHub release
 - [ ] PyPI publish (decision deferred; see ADR-0001)

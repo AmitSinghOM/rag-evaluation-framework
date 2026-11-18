@@ -40,12 +40,12 @@ explains the fields and records the choices the round-2 contract left open.
 | `schema_version` | Always `1` for this layout. A reader must refuse any other value (`rageval compare` exits 2). |
 | `rageval_version` | `rageval.__version__` that wrote the file. |
 | `created_at` | UTC, ISO 8601, second precision, `Z` suffix. The only field that differs between two runs with the same inputs and seed. |
-| `dataset.qrels.path` | The qrels path exactly as given on the command line (not resolved, so no machine-specific prefix leaks into a shared report). `null` when `evaluate()` was called on in-memory data. |
-| `dataset.qrels.sha256` | SHA-256 of the qrels file bytes; `null` for in-memory data. `compare` uses it to refuse reports made on different judgments. |
+| `dataset.qrels.path` | The qrels path exactly as given on the command line (not resolved, so no machine-specific prefix leaks into a shared report); for `--dataset`, the JSONL path. `null` when `evaluate()` was called on in-memory data. |
+| `dataset.qrels.sha256` | SHA-256 of the qrels file bytes; for `--dataset`, SHA-256 of the judgments alone (see [JSONL input](#jsonl-input-and-schema_version-1)); `null` for in-memory data. `compare` and `gate` use it to refuse reports made on different judgments. |
 | `dataset.n_queries` | Number of queries in the qrels. Every one is scored, including queries the run never answered (they score `0`) and queries whose judgments are all grade `0` (they also score `0`). |
 | `dataset.n_judged_relevant` | Number of `(query, doc)` judgments with grade `> 0`. |
-| `run.name` | `--name`, else the run file's stem (`run_a.txt` -> `run_a`); `null` for in-memory data with no name. |
-| `run.path`, `run.sha256` | As for the qrels. |
+| `run.name` | `--name`, else the run (or JSONL) file's stem (`run_a.txt` -> `run_a`); `null` for in-memory data with no name. |
+| `run.path`, `run.sha256` | The run file's path as given and the SHA-256 of its bytes; for `--dataset`, the JSONL path and the SHA-256 of the JSONL file's bytes. |
 | `run.n_queries_in_run` | Distinct query ids in the run file, including ones not in the qrels. |
 | `run.duplicate_ids` | Total repeated positions over the whole run file: `sum(len(docs) - len(set(docs)))` per query. A repeat scores nothing (see `METRIC-DEFINITIONS.md`); this counter makes it visible. |
 | `metrics.<name>.mean` | Mean of the per-query values over `n` = `dataset.n_queries` queries. |
@@ -77,7 +77,7 @@ forms. Repeated names are computed once.
   `{"query_id": str, "query": str|null, "retrieved": [docid, ...], "relevant": {docid: grade} | [docid, ...]}`.
   A list of relevant ids means grade `1` for each. Ids must be strings;
   grades are numbers `>= 0`. `read_jsonl` returns `(qrels, run)` keyed by
-  `query_id`. The CLI reads TREC files only in this round.
+  `query_id`. The CLI reads it with `rageval run --dataset FILE`.
 
 Choices where the contract was silent:
 
@@ -91,6 +91,31 @@ Choices where the contract was silent:
 | Qrels file with no judgments | exit 2 | there is nothing to score |
 
 Every `LoaderError` message starts with `path:line_no:` (1-based).
+
+## JSONL input and schema_version 1
+
+`rageval run --dataset FILE` reads one JSONL file instead of `--qrels` plus
+`--run`; giving both kinds, or neither, is a usage error (exit 1). The report
+keeps the `schema_version` 1 layout exactly. Renaming `dataset.qrels` to a
+`dataset.source` object with a `kind` field was considered and rejected: the
+published schema requires `dataset.qrels` and forbids extra properties, and
+every existing reader (`Report.from_dict`, so `compare` and `gate`) reads
+`dataset.qrels`, so the rename would break schema 1 readers. The JSONL case
+is expressed through the existing fields instead:
+
+| Field | Value for `--dataset FILE` |
+|---|---|
+| `dataset.qrels.path`, `run.path` | `FILE` as given |
+| `dataset.qrels.sha256` | SHA-256 of the judgments read from `FILE`, as UTF-8 `json.dumps(qrels, sort_keys=True, separators=(",", ":"))`, where `qrels` is `{query_id: {doc_id: grade as float}}` (`rageval.report.FileRef.of_judgments`) |
+| `run.sha256` | SHA-256 of the bytes of `FILE` |
+| `run.name` | `--name`, else the stem of `FILE` |
+
+Hashing the judgments, not the file, is what makes JSONL reports usable with
+`compare` and `gate`: two JSONL files with the same `relevant` labels and
+different `retrieved` lists give the same `dataset.qrels.sha256`. Equivalent
+spellings of a label (`["d4"]` and `{"d4": 1}`) hash the same. A JSONL report
+and a TREC-file report never share a hash, so `compare` and `gate` refuse to
+pair them (exit 2) even when the judgments are the same.
 
 ## `rageval compare a.json b.json`
 
@@ -131,7 +156,7 @@ n_queries: 6
 | Code | Meaning |
 |---|---|
 | 0 | ok |
-| 1 | usage or argument error: missing option, unknown metric name, `--resamples < 1` |
+| 1 | usage or argument error: missing option, unknown metric name, `--resamples < 1`, `--dataset` given with `--qrels`/`--run` or neither input given |
 | 2 | input or format error: unreadable or undecodable file, malformed line, empty qrels, qrels mismatch, bad report file |
 | 3 | internal error (one line on stderr, no traceback) |
 | 10 | `rageval gate`: at least one metric failed the non-inferiority check ([GATE.md](./GATE.md)) |
