@@ -3,7 +3,9 @@ requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rageval"
+# The pip name. "rageval" is taken on TestPyPI and too close to "rag-eval" on
+# PyPI (docs/RELEASING.md); the import name and the command stay `rageval`.
+name = "rag-evaluation-framework"
 version = "0.1.0a0"
 description = "Retrieval-quality evaluation for RAG systems: Recall@K, Precision@K, MRR, NDCG with graded relevance, cross-checked against ranx, no runtime dependencies."
 readme = "README.md"

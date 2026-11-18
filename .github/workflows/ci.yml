@@ -62,5 +62,50 @@ jobs:
           "$RUNNER_TEMP/user-venv/bin/python" -m pip install --quiet .
           "$RUNNER_TEMP/user-venv/bin/python" -m pip list --format=freeze --exclude pip --exclude setuptools \
             | tee installed.txt
-          test "$(grep -vc '^rageval==' installed.txt)" -eq 0
+          test "$(grep -vc '^rag-evaluation-framework==' installed.txt)" -eq 0
           "$RUNNER_TEMP/user-venv/bin/python" -c "import rageval; print(rageval.__version__)"
+
+  build:
+    name: build (sdist + wheel, install the wheel, quickstart)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Build and check the distributions
+        # Same commands and pins as .github/workflows/release.yml.
+        run: |
+          python -m pip install --quiet --disable-pip-version-check build==1.6.1 twine==7.0.0
+          python -m build
+          twine check --strict dist/*
+          ls -l dist
+
+      - name: Install the wheel in a clean venv and run the toy quickstart
+        # Runs from $RUNNER_TEMP so `python -m rageval` cannot import the
+        # checkout's source tree instead of the installed wheel.
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$GITHUB_WORKSPACE"
+          toy="$src/examples/toy"
+          name=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["name"])')
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          python -m venv "$RUNNER_TEMP/wheel-venv"
+          bin="$RUNNER_TEMP/wheel-venv/bin"
+          "$bin/python" -m pip install --quiet --disable-pip-version-check "$src"/dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$bin/python" -m pip list --format=freeze --exclude pip --exclude setuptools | tee installed.txt
+          test "$(cat installed.txt)" = "$name==$version"
+          test "$("$bin/rageval" --version)" = "rageval $version"
+          test "$("$bin/python" -m rageval --version)" = "rageval $version"
+          "$bin/python" -c "import rageval, sys; assert rageval.__file__.startswith(sys.prefix), rageval.__file__"
+          "$bin/rageval" run --qrels "$toy/qrels.txt" --run "$toy/run_a.txt" --metrics ndcg@10,recall@100,mrr --out report_a.json
+          "$bin/rageval" run --qrels "$toy/qrels.txt" --run "$toy/run_b.txt" --metrics ndcg@10,recall@100,mrr --out report_b.json
+          "$bin/rageval" compare report_a.json report_b.json
+          "$bin/python" -m rageval run --dataset "$toy/dataset.jsonl" --metrics ndcg@10,recall@100,mrr --out report_j.json
+          "$bin/rageval" gate --baseline report_a.json --candidate report_b.json --metric ndcg@10 --max-drop 0.02 --metric recall@100 --max-drop 0.05

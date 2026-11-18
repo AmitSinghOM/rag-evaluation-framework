@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import re
+import runpy
 import shlex
 import subprocess
 import sys
@@ -12,12 +14,14 @@ from pathlib import Path
 
 import pytest
 
-from rageval import evaluate, read_qrels, read_run
+from rageval import __version__, evaluate, read_jsonl, read_qrels, read_run
 from rageval.cli import EXIT_INPUT, EXIT_INTERNAL, EXIT_OK, EXIT_USAGE, build_parser, main
+from rageval.report import FileRef
 
 ROOT = Path(__file__).resolve().parents[1]
 TOY = ROOT / "examples" / "toy"
 QRELS, RUN_A, RUN_B = (str(TOY / name) for name in ("qrels.txt", "run_a.txt", "run_b.txt"))
+JSONL = str(TOY / "dataset.jsonl")  # the same data as qrels.txt + run_b.txt
 METRICS = "ndcg@10,recall@100,mrr,precision@3"
 TOLERANCE = 1e-9
 
@@ -102,6 +106,20 @@ def test_same_seed_is_byte_identical_apart_from_created_at(tmp_path: Path) -> No
             "expected 4",
         ),
         (["compare", "missing_a.json", "missing_b.json"], EXIT_INPUT, "No such"),
+        (["run", "--qrels", QRELS, "--metrics", "mrr", "--out", "o"], EXIT_USAGE, "--run R"),
+        (["run", "--run", RUN_A, "--metrics", "mrr", "--out", "o"], EXIT_USAGE, "--run R"),
+        (["run", "--metrics", "mrr", "--out", "o"], EXIT_USAGE, "or --dataset D"),
+        (
+            ["run", "--dataset", JSONL, "--qrels", QRELS, "--metrics", "mrr", "--out", "o"],
+            EXIT_USAGE,
+            "not both",
+        ),
+        (
+            ["run", "--dataset", JSONL, "--run", RUN_A, "--metrics", "mrr", "--out", "o"],
+            EXIT_USAGE,
+            "not both",
+        ),
+        (["run", "--dataset", RUN_A, "--metrics", "mrr", "--out", "o"], EXIT_INPUT, "invalid JSON"),
     ],
 )
 def test_exit_codes_for_usage_and_input_errors(
@@ -126,6 +144,9 @@ def test_empty_qrels_file_is_an_input_error(
     argv = ["run", "--qrels", str(empty), "--run", RUN_A, "--metrics", "mrr", "--out", "o.json"]
     assert main(argv) == EXIT_INPUT
     assert "no judgments" in capsys.readouterr().err
+    argv = ["run", "--dataset", str(empty), "--metrics", "mrr", "--out", "o.json"]
+    assert main(argv) == EXIT_INPUT
+    assert "dataset has no queries" in capsys.readouterr().err
 
 
 def test_undecodable_file_is_an_input_error(
@@ -213,6 +234,95 @@ def test_console_script_runs_and_reports_exit_codes(tmp_path: Path) -> None:
     assert missing.returncode == EXIT_INPUT
 
 
+def test_version_from_the_script_and_from_python_dash_m(tmp_path: Path) -> None:
+    for argv in ([str(_console_script())], [sys.executable, "-m", "rageval"]):
+        done = subprocess.run(  # noqa: S603 - fixed program, test-controlled arguments
+            [*argv, "--version"], capture_output=True, text=True, check=False, cwd=tmp_path
+        )
+        assert (done.returncode, done.stdout) == (EXIT_OK, f"rageval {__version__}\n"), argv
+
+
+def test_python_dash_m_runs_main_and_a_plain_import_does_not(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["rageval", "--version"])
+    with pytest.raises(SystemExit) as exited:
+        runpy.run_module("rageval", run_name="__main__")
+    assert exited.value.code == EXIT_OK
+    assert capsys.readouterr().out == f"rageval {__version__}\n"
+    monkeypatch.delitem(sys.modules, "rageval.__main__", raising=False)
+    importlib.import_module("rageval.__main__")
+    assert capsys.readouterr().out == ""
+
+
+def _script(*argv: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603 - fixed program, test-controlled arguments
+        [str(_console_script()), *argv], capture_output=True, text=True, check=False, cwd=ROOT
+    )
+
+
+def test_run_dataset_jsonl_gives_the_same_scores_as_the_trec_files(tmp_path: Path) -> None:
+    trec, jsonl = tmp_path / "trec.json", tmp_path / "jsonl.json"
+    assert _run(trec, RUN_B) == EXIT_OK
+    done = _script("run", "--dataset", JSONL, "--metrics", METRICS, "--out", str(jsonl))
+    assert done.returncode == EXIT_OK, done.stderr
+    assert done.stdout.splitlines()[-1] == f"wrote {jsonl} (6 queries)"
+    a = json.loads(trec.read_text(encoding="utf-8"))
+    b = json.loads(jsonl.read_text(encoding="utf-8"))
+    assert b["metrics"] == a["metrics"] and b["per_query"] == a["per_query"]
+    assert b["dataset"]["qrels"] == {
+        "path": JSONL,
+        "sha256": FileRef.of_judgments(JSONL, read_jsonl(JSONL)[0]).sha256,
+    }
+    assert (b["run"]["name"], b["run"]["path"]) == ("dataset", JSONL)
+    assert b["run"]["sha256"] == FileRef.of(JSONL).sha256
+    assert b["warnings"] == []
+    inproc = tmp_path / "inproc.json"  # the same run in-process, so coverage sees the path
+    assert main(["run", "--dataset", JSONL, "--metrics", METRICS, "--out", str(inproc)]) == 0
+    c = json.loads(inproc.read_text(encoding="utf-8"))
+    assert {**c, "created_at": None} == {**b, "created_at": None}
+
+
+def test_jsonl_reports_compare_when_the_judgments_match_and_only_then(tmp_path: Path) -> None:
+    rows = [json.loads(line) for line in Path(JSONL).read_text(encoding="utf-8").splitlines()]
+    reranked = [{**row, "retrieved": row["retrieved"][::-1]} for row in rows]
+    relabelled = [{**row, "relevant": ["d999"]} if i == 0 else row for i, row in enumerate(rows)]
+    for name, data in (("reranked", reranked), ("relabelled", relabelled)):
+        text = "".join(json.dumps(row) + "\n" for row in data)
+        (tmp_path / f"{name}.jsonl").write_text(text, encoding="utf-8")
+    for name in ("dataset", "reranked", "relabelled"):
+        path = JSONL if name == "dataset" else str(tmp_path / f"{name}.jsonl")
+        out = str(tmp_path / f"{name}.r")
+        done = _script("run", "--dataset", path, "--metrics", "mrr", "--out", out)
+        assert done.returncode == EXIT_OK, done.stderr
+    same = _script("compare", f"{tmp_path}/dataset.r", f"{tmp_path}/reranked.r")
+    assert same.returncode == EXIT_OK, same.stderr
+    other = _script("compare", f"{tmp_path}/dataset.r", f"{tmp_path}/relabelled.r")
+    assert (other.returncode, "different qrels" in other.stderr) == (EXIT_INPUT, True)
+    assert _run(tmp_path / "trec.r", RUN_B) == EXIT_OK  # same judgments, TREC files
+    mixed = _script("compare", f"{tmp_path}/trec.r", f"{tmp_path}/dataset.r")
+    assert (mixed.returncode, "different qrels" in mixed.stderr) == (EXIT_INPUT, True)
+
+
+def test_equivalent_jsonl_labels_hash_the_same(tmp_path: Path) -> None:
+    listed, graded = tmp_path / "listed.jsonl", tmp_path / "graded.jsonl"
+    row = '{{"query_id": "q1", "retrieved": {}, "relevant": {}}}\n'
+    listed.write_text(row.format('["d1", "d4"]', '["d4"]'), encoding="utf-8")
+    graded.write_text(row.format('["d4"]', '{"d4": 1}'), encoding="utf-8")
+    hashes = {FileRef.of_judgments(p, read_jsonl(p)[0]).sha256 for p in (listed, graded)}
+    assert len(hashes) == 1
+
+
+def test_run_refuses_dataset_mixed_with_trec_files(tmp_path: Path) -> None:
+    out = tmp_path / "never.json"
+    done = _script(
+        "run", "--dataset", JSONL, "--qrels", QRELS, "--metrics", "mrr", "--out", str(out)
+    )
+    assert done.returncode == EXIT_USAGE
+    assert "give --dataset alone, or --qrels with --run, not both" in done.stderr
+    assert not out.exists()
+
+
 # ---------------------------------------------------------------- ranx agreement
 
 
@@ -247,13 +357,18 @@ def test_run_means_agree_with_ranx_on_the_same_files(tmp_path: Path, run_file: s
 
 def test_readme_quickstart_commands_still_parse() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    block = re.search(r"## Quickstart.*?```bash\n(.*?)```", readme, re.S)
-    assert block, "README needs a Quickstart section with a bash block"
-    commands = [line for line in block.group(1).splitlines() if line.startswith("rageval ")]
-    assert len(commands) >= 3, commands
+    section = re.search(r"## Quickstart(.*?)\n## ", readme, re.S)
+    assert section, "README needs a Quickstart section"
+    blocks = re.findall(r"```bash\n(.*?)```", section.group(1), re.S)
+    commands = [
+        line for block in blocks for line in block.splitlines() if line.startswith("rageval ")
+    ]
+    assert len(commands) >= 4, commands
     parser = build_parser()
     for command in commands:
         args = parser.parse_args(shlex.split(command)[1:])
         assert args.command in {"run", "compare"}
         if args.command == "run":
-            assert (ROOT / args.qrels).exists() and (ROOT / args.run).exists(), command
+            inputs = [args.dataset] if args.dataset else [args.qrels, args.run]
+            assert all((ROOT / path).exists() for path in inputs), command
+    assert any("--dataset" in command for command in commands)

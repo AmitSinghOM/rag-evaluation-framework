@@ -2,8 +2,8 @@
 
 **Measures retrieval quality for RAG systems: Recall@K, Precision@K, MRR, NDCG with graded relevance, in pure Python with no runtime dependencies, and every value cross-checked against [ranx](https://github.com/AmenRa/ranx).**
 
-> **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 loaders, versioned report with bootstrap CIs and the `rageval run` / `rageval compare` CLI done; Phase 2 non-inferiority regression gate (`rageval gate`) and its GitHub Action done; nothing published.**
-> The package is not on PyPI. Install from source (below). The repository is private until v0.1.
+> **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 loaders, versioned report with bootstrap CIs and the `rageval run` / `rageval compare` CLI done; Phase 2 non-inferiority regression gate (`rageval gate`) and its GitHub Action done; release workflow written (a tag uploads to TestPyPI only) but not yet run; nothing published.**
+> The package is not on PyPI or TestPyPI. Install from source (below). The repository is private until v0.1.
 > Scope and the reasons for it: [docs/decisions/ADR-0001-v0.1-scope.md](./docs/decisions/ADR-0001-v0.1-scope.md).
 
 ## What works today
@@ -15,18 +15,23 @@
 - Loaders for TREC qrels, TREC run files and a JSONL dataset format (`read_qrels`, `read_run`, `read_jsonl`); a malformed line fails with the file and line number.
 - `rageval run`: a versioned JSON report (`schema_version` 1, [docs/REPORT-SCHEMA.md](./docs/REPORT-SCHEMA.md), [docs/report.schema.json](./docs/report.schema.json)) with per-query scores, means and seeded bootstrap 95% confidence intervals; `rageval compare`: paired per-query differences with their CI, refusing reports made on different qrels. Means agree with `ranx.evaluate` on the same files within 1e-9.
 - `rageval gate`: a non-inferiority regression gate for CI. Per metric it fails (exit 10) unless the lower bound of the paired bootstrap CI of candidate minus baseline is above `-max_drop`; a composite GitHub Action (`action.yml`) wraps it. See [Regression gate](#regression-gate) and [docs/GATE.md](./docs/GATE.md).
+- `rageval run --dataset data.jsonl`: one JSONL file (judgments and ranking per query) instead of a TREC qrels file plus a run file. `python -m rageval` works the same as `rageval`.
+- A release workflow ([docs/RELEASING.md](./docs/RELEASING.md)): a `v*` tag builds the sdist and wheel, uploads them to TestPyPI only and attaches them to a GitHub Release; the real PyPI is reached only by a manual run on a tag with `confirm: publish`. Uploads use Trusted Publishing (OIDC), so no token is stored anywhere. It has not been run yet. CI builds the wheel, installs it in a clean venv and runs the quickstart below on every change.
 - Typed (`py.typed`), mypy strict, ruff, a 95% branch-coverage floor enforced in CI, CI on Python 3.11-3.14 (Ubuntu) and 3.13 (macOS).
 - A tiny in-memory loader (`load`) that turns `(query, retrieved, relevant)` triples into records.
 
-Not yet: a grounding check, JSONL input on the command line. See [ROADMAP.md](./ROADMAP.md).
+Not yet: a grounding check, a published package. See [ROADMAP.md](./ROADMAP.md).
 
-## Install (from source)
+## Install
+
+rageval is not on PyPI yet. Install from source, or, once a version is tagged, from the wheel attached to its [GitHub Release](https://github.com/AmitSinghOM/rag-evaluation-framework/releases) (none is tagged yet). The package you install is named `rag-evaluation-framework`; you import `rageval` and run `rageval`.
 
 ```bash
 pip install git+https://github.com/AmitSinghOM/rag-evaluation-framework.git
+# or, from a release:  pip install rag_evaluation_framework-<version>-py3-none-any.whl
 ```
 
-Python 3.11 or newer. The install brings no third-party package.
+Python 3.11 or newer. The install brings no third-party package. Check it with `rageval --version` or `python -m rageval --version` (prints `rageval 0.1.0a0`).
 
 ## Quickstart (Phase 1)
 
@@ -39,7 +44,7 @@ rageval run --qrels examples/toy/qrels.txt --run examples/toy/run_b.txt --metric
 rageval compare report_a.json report_b.json
 ```
 
-Real output of those lines (Python 3.13.12, run while writing this section; `pip list` showed `rageval==0.1.0a0` and nothing else):
+Real output of those lines (Python 3.13.12, run while writing this section; `pip list` showed `rag-evaluation-framework==0.1.0a0` and nothing else):
 
 ```text
 $ rageval run --qrels examples/toy/qrels.txt --run examples/toy/run_a.txt --metrics ndcg@10,recall@100,mrr --out report_a.json
@@ -81,6 +86,28 @@ n_queries: 6
 ```
 
 Metric names: `ndcg@K`, `recall@K`, `precision@K`, `mrr`, `mrr@K`. Options: `--resamples N` (1000), `--seed S` (0), `--name NAME`; `compare --format json`. Exit codes: 0 ok, 1 usage, 2 input or format error, 3 internal, 10 regression gate failed. A query in the qrels that the run never answers scores 0; a query in the run that is not judged is ignored and listed under `warnings`. Six queries give the wide intervals above by design; the point of the CI is that on a real query set it tells you whether a difference is noise.
+
+### One JSONL file instead of two TREC files
+
+`--dataset` reads one object per query, `{"query_id": ..., "query": ..., "retrieved": [...], "relevant": {id: grade} or [ids]}` (format: [docs/REPORT-SCHEMA.md](./docs/REPORT-SCHEMA.md#input-formats)). Give either `--dataset` or `--qrels` with `--run`; mixing them is a usage error (exit 1). `examples/toy/dataset.jsonl` holds the same data as `qrels.txt` plus `run_b.txt`, so it scores the same:
+
+```bash
+rageval run --dataset examples/toy/dataset.jsonl --metrics ndcg@10,recall@100,mrr --out report_j.json
+python -m rageval --version
+```
+
+```text
+$ rageval run --dataset examples/toy/dataset.jsonl --metrics ndcg@10,recall@100,mrr --out report_j.json
+metric          mean  ci95                  n
+ndcg@10       0.8636  [0.7406, 0.9866]      6
+recall@100    1.0000  [1.0000, 1.0000]      6
+mrr           0.8333  [0.6667, 1.0000]      6
+wrote report_j.json (6 queries)
+$ python -m rageval --version
+rageval 0.1.0a0
+```
+
+The report layout is unchanged (`schema_version` 1). For a JSONL input, `dataset.qrels.path` and `run.path` are both the JSONL path; `dataset.qrels.sha256` hashes the judgments only, so two JSONL files with the same labels and different rankings can be compared and gated. `compare` and `gate` refuse to pair a JSONL report with a TREC-file report, because their hashes differ.
 
 ## Regression gate
 

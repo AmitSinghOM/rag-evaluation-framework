@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Workflows in .github/workflows and the composite action.yml at the root.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7 # let a new release age a week before proposing it
+
+  # The pinned dev extra in pyproject.toml (runtime dependencies are empty).
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

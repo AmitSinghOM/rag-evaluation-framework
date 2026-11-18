@@ -15,7 +15,7 @@ from typing import Any, NoReturn, cast
 
 from .evaluate import evaluate, parse_metric
 from .gate import gate
-from .loaders import LoaderError, read_qrels, read_run
+from .loaders import LoaderError, read_jsonl, read_qrels, read_run
 from .report import FileRef, Report, ReportError, compare
 
 EXIT_OK = 0
@@ -72,12 +72,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser(
         "run",
-        help="score a TREC run file against TREC qrels and write a JSON report",
-        description="Score a TREC run file against TREC qrels and write a JSON report.",
+        help="score a run against judgments (TREC files or one JSONL file), write a JSON report",
+        description=(
+            "Score a TREC run file against TREC qrels, or a JSONL dataset that holds both, "
+            "and write a JSON report."
+        ),
     )
-    run.add_argument("--qrels", required=True, metavar="Q", help="TREC qrels: qid 0 docid grade")
-    run.add_argument(
-        "--run", required=True, metavar="R", help="TREC run: qid Q0 docid rank score tag"
+    source = run.add_argument_group(
+        "input", "either --qrels with --run (two TREC files) or --dataset (one JSONL file)"
+    )
+    source.add_argument("--qrels", metavar="Q", help="TREC qrels: qid 0 docid grade")
+    source.add_argument("--run", metavar="R", help="TREC run: qid Q0 docid rank score tag")
+    source.add_argument(
+        "--dataset",
+        metavar="D",
+        help='JSONL, one query per line: {"query_id", "retrieved", "relevant"}',
     )
     run.add_argument(
         "--metrics",
@@ -91,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--seed", type=int, default=0, metavar="S", help="bootstrap seed (0)")
     run.add_argument(
-        "--name", metavar="NAME", help="run name in the report (default: run file stem)"
+        "--name", metavar="NAME", help="run name in the report (default: run or dataset file stem)"
     )
     run.set_defaults(func=_run)
 
@@ -167,19 +176,32 @@ def _run(args: argparse.Namespace) -> int:
         parse_metric(name)
     if args.resamples < 1:
         raise ValueError("--resamples must be >= 1")
-    qrels = read_qrels(args.qrels)
-    run = read_run(args.run)
-    if not qrels:
-        raise LoaderError(args.qrels, 0, "qrels file has no judgments")
+    if args.dataset is not None:
+        if args.qrels is not None or args.run is not None:
+            raise ValueError("give --dataset alone, or --qrels with --run, not both")
+        qrels, run = read_jsonl(args.dataset)
+        if not qrels:
+            raise LoaderError(args.dataset, 0, "dataset has no queries")
+        qrels_ref, run_ref = FileRef.of_judgments(args.dataset, qrels), FileRef.of(args.dataset)
+        source = args.dataset
+    elif args.qrels is None or args.run is None:
+        raise ValueError("needs --qrels Q with --run R, or --dataset D")
+    else:
+        qrels = read_qrels(args.qrels)
+        run = read_run(args.run)
+        if not qrels:
+            raise LoaderError(args.qrels, 0, "qrels file has no judgments")
+        qrels_ref, run_ref = FileRef.of(args.qrels), FileRef.of(args.run)
+        source = args.run
     report = evaluate(
         qrels,
         run,
         metrics,
         resamples=args.resamples,
         seed=args.seed,
-        qrels_ref=FileRef.of(args.qrels),
-        run_ref=FileRef.of(args.run),
-        run_name=args.name or Path(args.run).stem,
+        qrels_ref=qrels_ref,
+        run_ref=run_ref,
+        run_name=args.name or Path(source).stem,
     )
     report.write(args.out)
     for warning in report.warnings:
