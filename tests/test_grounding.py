@@ -10,7 +10,10 @@ import json
 import random
 import subprocess
 import sys
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from threading import Thread
 from typing import Any
 from urllib.error import HTTPError, URLError
 
@@ -255,6 +258,76 @@ def test_openai_compatible_judge_transport_errors(monkeypatch: pytest.MonkeyPatc
     _patch_urlopen(monkeypatch, lambda req: (_ for _ in ()).throw(TimeoutError()))
     with pytest.raises(JudgeError, match="did not answer"):
         judge.judge("q", "a", [])
+
+
+class _Recorder(BaseHTTPRequestHandler):
+    """A second host that records what reaches it and answers like a judge would."""
+
+    seen: list[tuple[str, str | None]] = []  # (method, Authorization header)
+
+    def do_GET(self) -> None:  # noqa: N802 - http.server API
+        _Recorder.seen.append((self.command, self.headers.get("Authorization")))
+        body = json.dumps(
+            {"choices": [{"message": {"content": '{"grounded": true, "confidence": 1}'}}]}
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_POST = do_GET
+
+    def log_message(self, *args: Any) -> None:
+        return
+
+
+class _Redirector(BaseHTTPRequestHandler):
+    target = ""
+
+    def do_POST(self) -> None:  # noqa: N802 - http.server API
+        self.send_response(302)
+        self.send_header("Location", _Redirector.target)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *args: Any) -> None:
+        return
+
+
+@pytest.fixture
+def redirecting_servers() -> Iterator[tuple[str, str]]:
+    """``(redirector base_url, target base_url)``: the first 302s every POST to the second."""
+    target = HTTPServer(("127.0.0.1", 0), _Recorder)
+    _Redirector.target = f"http://127.0.0.1:{target.server_port}/elsewhere/chat/completions"
+    redirector = HTTPServer(("127.0.0.1", 0), _Redirector)
+    _Recorder.seen = []
+    threads = [Thread(target=s.serve_forever, daemon=True) for s in (target, redirector)]
+    for thread in threads:
+        thread.start()
+    try:
+        yield f"http://127.0.0.1:{redirector.server_port}", _Redirector.target
+    finally:
+        for server in (target, redirector):
+            server.shutdown()
+            server.server_close()
+
+
+def test_judge_never_follows_a_redirect_so_the_key_stays_with_the_named_host(
+    monkeypatch: pytest.MonkeyPatch, redirecting_servers: tuple[str, str]
+) -> None:
+    # Real sockets, real urllib: the lock is on the opener, not on a mock. On the
+    # unfixed code urllib follows the 302 as a GET to the other host with the
+    # Bearer header attached and the judge returns a verdict from there.
+    base_url, target = redirecting_servers
+    monkeypatch.setenv("RAGEVAL_JUDGE_API_KEY", "sk-test-not-a-real-key")
+    judge = OpenAICompatibleJudge(base_url=base_url, model="m")
+    with pytest.raises(JudgeError, match="redirected \\(HTTP 302\\)") as info:
+        judge.judge("q", "a", ["p"])
+    assert target in str(info.value) and "sk-test" not in str(info.value)
+    assert _Recorder.seen == []  # nothing, with or without the key, reached the other host
+    with pytest.raises(JudgeError, match="redirected"):
+        OllamaJudge("m", base_url=base_url).judge("q", "a", ["p"])
+    assert _Recorder.seen == []
 
 
 # ------------------------------------------------------------------------- pack

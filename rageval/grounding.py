@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .loaders import LoaderError, Qrels, Run
 from .stats import bootstrap_ci
@@ -195,13 +195,26 @@ class _HTTPStatus(Exception):
         self.detail = detail
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    """Refuse every redirect, so a request (and its Authorization header) never leaves
+    the host named in ``base_url``. urllib would otherwise follow a 301/302/303 to any
+    host, as a GET, with the Bearer key still attached."""
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None  # urllib then raises HTTPError for the 3xx itself
+
+
+urlopen = build_opener(_NoRedirect).open
+
+
 def _post_json(
     url: str, payload: Mapping[str, Any], headers: Mapping[str, str], timeout: float
 ) -> dict[str, Any]:
     """POST ``payload`` as JSON and return the decoded JSON object; ``http(s)`` only.
 
-    Raises :class:`_HTTPStatus` for a non-2xx reply, ``URLError`` when the
-    server cannot be reached and ``TimeoutError`` when it does not answer.
+    Raises :class:`_HTTPStatus` for a non-2xx reply, ``JudgeError`` for a
+    redirect (never followed), ``URLError`` when the server cannot be reached
+    and ``TimeoutError`` when it does not answer.
     """
     if not url.startswith(("http://", "https://")):
         raise ConfigError(f"base_url must start with http:// or https://, got {url!r}")
@@ -215,6 +228,12 @@ def _post_json(
     except HTTPError as exc:
         with exc:  # HTTPError is a file-like temp wrapper; close it or 3.14 warns
             detail = exc.read().decode("utf-8", "replace")[:200]
+            location = exc.headers.get("Location", "?") if exc.headers is not None else "?"
+        if 300 <= exc.code < 400:
+            raise JudgeError(
+                f"{url} redirected (HTTP {exc.code}) to {location}; redirects are not followed, "
+                "so point --base-url at the final address"
+            ) from None
         raise _HTTPStatus(exc.code, detail) from None
     try:
         data = json.loads(text)
@@ -257,8 +276,7 @@ def ollama_chat(
         ) from None
     except TimeoutError:
         raise JudgeError(
-            f"Ollama at {base_url} did not answer within {timeout:g} s; "
-            "try a smaller model or a longer --timeout"
+            f"Ollama at {base_url} did not answer within {timeout:g} s; try a smaller model"
         ) from None
     try:
         content = data["message"]["content"]
