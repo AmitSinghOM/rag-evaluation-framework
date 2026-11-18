@@ -85,6 +85,21 @@ jobs:
           twine check --strict dist/*
           ls -l dist
 
+      - name: The sdist carries examples/toy and no tests; the wheel carries py.typed
+        # MANIFEST.in is the rule; this is the check on the built files.
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar tzf dist/*.tar.gz | sed 's#^[^/]*/##' | sort > sdist.txt
+          for f in examples/toy/qrels.txt examples/toy/run_a.txt examples/toy/run_b.txt examples/toy/dataset.jsonl LICENSE README.md; do
+            grep -qx "$f" sdist.txt || { echo "::error::sdist lacks $f"; exit 1; }
+          done
+          if grep -qE '^(tests/|examples/scifact/|\.github/)' sdist.txt; then
+            echo "::error::sdist ships files it should not:"; grep -E '^(tests/|examples/scifact/|\.github/)' sdist.txt; exit 1
+          fi
+          unzip -l dist/*.whl | grep -q ' rageval/py.typed$' || { echo "::error::wheel lacks py.typed"; exit 1; }
+          if unzip -l dist/*.whl | grep -qE ' (tests/|examples/)'; then echo "::error::wheel ships tests or examples"; exit 1; fi
+
       - name: Install the wheel in a clean venv and run the toy quickstart
         # Runs from $RUNNER_TEMP so `python -m rageval` cannot import the
         # checkout's source tree instead of the installed wheel.

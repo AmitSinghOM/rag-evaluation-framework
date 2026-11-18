@@ -48,6 +48,14 @@ rageval run --qrels examples/toy/qrels.txt --run examples/toy/run_b.txt --metric
 rageval compare report_a.json report_b.json
 ```
 
+Without a clone (installed from a wheel or an index): the sdist carries `examples/toy/`, the wheel does not, so fetch the four toy files into `examples/toy/` first; the commands above then run unchanged. Pin the URL to the tag of the version you installed.
+
+```bash
+mkdir -p examples/toy
+base=https://raw.githubusercontent.com/AmitSinghOM/rag-evaluation-framework/v0.1.0/examples/toy
+for f in qrels.txt run_a.txt run_b.txt dataset.jsonl; do curl -fsSL "$base/$f" -o "examples/toy/$f"; done
+```
+
 Real output of those lines (Python 3.13.12, run while writing this section; `pip list` showed `rag-evaluation-framework==0.1.0a0` and nothing else):
 
 ```text

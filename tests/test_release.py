@@ -86,3 +86,14 @@ def test_no_workflow_or_action_holds_a_stored_credential() -> None:
             assert needle not in text, (path.name, needle)
         # A PyPI API token is "pypi-" plus a long base64 macaroon.
         assert not re.search(r"pypi-[a-z0-9_-]{20,}", text), path.name
+
+
+def test_sdist_rules_ship_the_toy_examples_and_no_tests() -> None:
+    # The rule file; CI's build job checks the built sdist against the same rules
+    # (job `build`, step "The sdist carries examples/toy and no tests").
+    manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8").splitlines()
+    rules = [line for line in manifest if line and not line.startswith("#")]
+    assert rules == ["graft examples/toy", "prune tests"]
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "tar tzf dist/*.tar.gz" in ci and "examples/toy/qrels.txt" in ci
+    assert "'^(tests/|examples/scifact/|\\.github/)'" in ci

@@ -1,0 +1,8 @@
+# What the sdist carries beyond the package (the wheel is unaffected).
+# examples/toy: the six-query fixtures the README quickstart runs, so a user
+# with only the sdist can follow it. examples/scifact (2.9 MB) stays out.
+# tests/ are not shipped: they need examples/scifact, docs/ and .github/, so
+# a half-shipped test suite would only fail. tests/test_release.py checks the
+# built sdist against these rules.
+graft examples/toy
+prune tests
