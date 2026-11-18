@@ -1,13 +1,17 @@
-"""Command line: ``rageval run``, ``rageval compare`` and ``rageval gate``.
+"""Command line: ``rageval run``, ``rageval compare``, ``rageval gate`` and ``rageval ground``.
 
 Exit codes: ``0`` ok, ``1`` usage or argument error, ``2`` input or format
 error (unreadable file, malformed line, qrels mismatch), ``3`` internal
 error, ``10`` the regression gate failed on at least one metric.
+
+``rageval ground`` (experimental grounding check) lives in its own block at
+the end of this file and imports :mod:`rageval.grounding` only when invoked.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -68,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     from . import __version__  # at call time: avoids a cycle with rageval/__init__.py
 
     parser.add_argument("--version", action="version", version=f"rageval {__version__}")
-    sub = parser.add_subparsers(dest="command", required=True, metavar="{run,compare,gate}")
+    sub = parser.add_subparsers(dest="command", required=True, metavar="{run,compare,gate,ground}")
 
     run = sub.add_parser(
         "run",
@@ -155,6 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="also append a Markdown table to PATH (for $GITHUB_STEP_SUMMARY)",
     )
     gate_.set_defaults(func=_gate)
+    _add_ground_parser(sub)
     return parser
 
 
@@ -262,3 +267,178 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:  # last resort: one line on stderr, never a traceback dump
         print(f"rageval: internal error: {exc!r}", file=sys.stderr)
         return EXIT_INTERNAL
+
+
+# ------------------------------------------------------------------ rageval ground
+# EXPERIMENTAL. Kept in one block so it rebases cleanly against the commands above;
+# rageval.grounding is imported only here, never by run/compare/gate.
+
+OLLAMA_URL = "http://localhost:11434"
+
+
+def _add_ground_parser(sub: argparse._SubParsersAction[Any]) -> None:
+    ground = sub.add_parser(
+        "ground",
+        help="EXPERIMENTAL grounding check: labelling pack, scores, calibration report",
+        description=(
+            "EXPERIMENTAL grounding check (docs/GROUNDING.md): prepare a labelling pack, "
+            "score it with the lexical baseline or a judge, calibrate against human labels."
+        ),
+    )
+    gsub = ground.add_subparsers(dest="ground_command", required=True)
+
+    prep = gsub.add_parser(
+        "prepare",
+        help="sample queries, take the top passages, generate answers, write the pack and key",
+    )
+    prep.add_argument("--qrels", required=True, metavar="Q", help="TREC qrels")
+    prep.add_argument("--run", required=True, metavar="R", help="TREC run (top passages)")
+    prep.add_argument(
+        "--corpus", required=True, metavar="C.jsonl", help="BEIR corpus: _id, title, text"
+    )
+    prep.add_argument("--queries", required=True, metavar="Q.jsonl", help="BEIR queries: _id, text")
+    prep.add_argument("--n", type=int, default=60, metavar="N", help="items, even (60)")
+    prep.add_argument("--seed", type=int, default=0, metavar="S", help="sampling seed (0)")
+    prep.add_argument(
+        "--generator", default="fake", metavar="SPEC", help="ollama:MODEL or fake (fake)"
+    )
+    prep.add_argument("--top", type=int, default=3, metavar="K", help="passages per item (3)")
+    prep.add_argument(
+        "--base-url", default=OLLAMA_URL, metavar="URL", help=f"Ollama ({OLLAMA_URL})"
+    )
+    prep.add_argument("--out", required=True, metavar="pack.jsonl", help="the pack to label")
+    prep.add_argument("--sheet", metavar="pack.md", help="also write a Markdown labelling sheet")
+    prep.add_argument(
+        "--key",
+        metavar="pack.key.jsonl",
+        help="hidden condition per item (default: next to --out). Do not open before labelling",
+    )
+    prep.set_defaults(func=_ground, ground_func=_ground_prepare)
+
+    score = gsub.add_parser("score", help="one grounding score per pack item")
+    score.add_argument("--pack", required=True, metavar="pack.jsonl")
+    score.add_argument(
+        "--method",
+        default="lexical",
+        metavar="M",
+        help="lexical (default, deterministic), ollama:MODEL, or openai-compatible",
+    )
+    score.add_argument(
+        "--base-url", metavar="URL", help="judge server (Ollama default localhost:11434)"
+    )
+    score.add_argument("--model", metavar="NAME", help="model for --method openai-compatible")
+    score.add_argument("--out", required=True, metavar="scores.json")
+    score.set_defaults(func=_ground, ground_func=_ground_score)
+
+    cal = gsub.add_parser(
+        "calibrate", help="compare scores with human labels; exit 2 under 30 labelled items"
+    )
+    cal.add_argument("--pack", required=True, metavar="labelled.jsonl")
+    cal.add_argument("--scores", required=True, metavar="scores.json")
+    cal.add_argument("--sheet", metavar="labelled.md", help="labels from the Markdown sheet")
+    cal.add_argument(
+        "--key",
+        metavar="pack.key.jsonl",
+        help="hidden conditions (default: found next to --pack or in key/)",
+    )
+    cal.add_argument(
+        "--resamples", type=int, default=1000, metavar="N", help="bootstrap resamples (1000)"
+    )
+    cal.add_argument("--seed", type=int, default=0, metavar="S", help="bootstrap seed (0)")
+    cal.add_argument("--out", required=True, metavar="calibration.json")
+    cal.set_defaults(func=_ground, ground_func=_ground_calibrate)
+
+
+def _ground(args: argparse.Namespace) -> int:
+    from . import grounding
+
+    try:
+        result: int = args.ground_func(args, grounding)
+        return result
+    except (grounding.JudgeError, grounding.TooFewLabelsError) as exc:
+        print(f"rageval: error: {exc}", file=sys.stderr)
+        return EXIT_INPUT
+
+
+def _ground_prepare(args: argparse.Namespace, g: Any) -> int:
+    generator = g.make_generator(args.generator, base_url=args.base_url)
+    if args.top < 1:
+        raise ValueError("--top must be >= 1")
+    pack = g.prepare_pack(
+        read_qrels(args.qrels),
+        read_run(args.run),
+        args.corpus,
+        args.queries,
+        n=args.n,
+        seed=args.seed,
+        generator=generator,
+        generator_name=args.generator,
+        top=args.top,
+    )
+    key = args.key or str(Path(args.out).with_suffix(".key.jsonl"))
+    g.write_pack(pack, args.out, args.sheet, key)
+    total = sum(pack.seconds)
+    print(
+        f"wrote {args.out} ({len(pack.items)} items, labels empty), key {key}; "
+        f"generation {total:.1f} s total, {total / len(pack.items):.2f} s per item"
+    )
+    print("do not open the key file before labelling; see README.md next to the pack")
+    return EXIT_OK
+
+
+def _ground_score(args: argparse.Namespace, g: Any) -> int:
+    judge = g.make_judge(args.method, base_url=args.base_url, model=args.model)
+    items = g.read_pack(args.pack)
+    if not items:
+        raise LoaderError(args.pack, 0, "pack has no items")
+    result = g.score_pack(items, judge)
+    Path(args.out).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    values = [s["score"] for s in result["scores"].values()]
+    print(
+        f"wrote {args.out} ({len(values)} items, method {result['method']}); "
+        f"mean score {sum(values) / len(values):.4f}, min {min(values):.4f}, max {max(values):.4f}"
+    )
+    return EXIT_OK
+
+
+def _ground_calibrate(args: argparse.Namespace, g: Any) -> int:
+    items = g.read_pack(args.pack)
+    method, scores = g.read_scores(args.scores)
+    sheet_labels = g.read_sheet_labels(args.sheet) if args.sheet else None
+    key_path = args.key
+    if key_path is None:
+        pack_dir = Path(args.pack).parent
+        for candidate in (pack_dir / "pack.key.jsonl", pack_dir / "key" / "pack.key.jsonl"):
+            if candidate.is_file():
+                key_path = str(candidate)
+                break
+    key = g.read_key(key_path) if key_path else None
+    report = g.calibrate(
+        items,
+        scores,
+        method=method,
+        sheet_labels=sheet_labels,
+        key=key,
+        resamples=args.resamples,
+        seed=args.seed,
+    )
+    Path(args.out).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    for warning in report["warnings"]:
+        print(f"warning: {warning}", file=sys.stderr)
+    best = report["best"]
+    lo, hi = best["accuracy_ci95"]
+    print(
+        f"method {method}: n_labelled {report['n_labelled']} "
+        f"(grounded {report['n_per_class']['grounded']}, "
+        f"not_grounded {report['n_per_class']['not_grounded']}, unsure {report['n_unsure']})"
+    )
+    print(
+        f"best threshold {best['threshold']:.4f}: accuracy {best['accuracy']:.4f} "
+        f"[{lo:.4f}, {hi:.4f}], precision {best['precision']:.4f}, "
+        f"recall {best['recall']:.4f}, F1 {best['f1']:.4f}"
+    )
+    if report["hidden_condition"]:
+        agree = report["hidden_condition"]["label_agrees_with_condition"]
+        print(f"labels agree with the hidden condition on {agree:.4f} of items")
+    print(f"wrote {args.out} (status: experimental)")
+    return EXIT_OK

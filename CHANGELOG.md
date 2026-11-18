@@ -47,6 +47,33 @@ Nothing has been released or published yet.
   GitHub Release wheel), JSONL quickstart with real output,
   `python -m rageval`.
 
+- [X] EXPERIMENTAL grounding check, `rageval.grounding` (stdlib only, never
+  imported by `rageval run/compare/gate`): `lexical_support(answer,
+  passages)` (per-sentence fraction of content tokens found in one single
+  passage, mean over sentences; rule in `docs/GROUNDING.md`); a `Judge`
+  protocol with `OllamaJudge` (`urllib`, JSON mode, 60 s timeout, errors
+  that name `ollama serve` / `ollama pull MODEL`) and
+  `OpenAICompatibleJudge` (key read from `RAGEVAL_JUDGE_API_KEY` or the
+  named variable only; a missing one raises `ConfigError` naming it).
+- [X] `rageval ground prepare` (seeded sample of queries whose top-3 holds a
+  relevant passage, one answer per item from a local model under two hidden
+  conditions in equal halves, `pack.jsonl` + Markdown sheet + `README.md`,
+  the condition kept in a separate key file), `rageval ground score`
+  (`lexical`, `ollama:MODEL`, `openai-compatible`; lexical is
+  byte-identical across runs) and `rageval ground calibrate` (threshold
+  sweep, accuracy with bootstrap CI95, precision/recall/F1, confusion
+  matrix, n per class, agreement with the hidden condition; `schema_version
+  1`, `status: experimental`; exit 2 under 30 labelled items, warning under
+  50; `unsure` ignored; labels from the pack or the filled sheet).
+- [X] `docs/GROUNDING.md`: what the lexical score is and is not, the judge,
+  how to read the calibration report, the HHEM-2.1-Open reference point, and
+  a pre-label sanity check of the first 60-item pack (not a calibration).
+  README `Grounding (experimental)` paragraph with no numbers.
+- [X] `tests/test_grounding.py`: lexical rule on hand-built cases, both
+  judges mocked at the `urllib` boundary, `prepare` with `--generator fake`
+  on a synthetic corpus, `calibrate` on a pack with a known threshold, every
+  exit code. No network, no Ollama in CI.
+
 - [G] `rageval gate --baseline B --candidate C --metric NAME --max-drop X
   [--metric ... --max-drop ...] [--resamples N --seed S --level L]
   [--format table|json] [--summary PATH]`: a non-inferiority regression

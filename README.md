@@ -2,7 +2,7 @@
 
 **Measures retrieval quality for RAG systems: Recall@K, Precision@K, MRR, NDCG with graded relevance, in pure Python with no runtime dependencies, and every value cross-checked against [ranx](https://github.com/AmenRa/ranx).**
 
-> **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 loaders, versioned report with bootstrap CIs and the `rageval run` / `rageval compare` CLI done; Phase 2 non-inferiority regression gate (`rageval gate`) and its GitHub Action done; release workflow written (a tag uploads to TestPyPI only) but not yet run; nothing published.**
+> **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 loaders, versioned report with bootstrap CIs and the `rageval run` / `rageval compare` CLI done; Phase 2 non-inferiority regression gate (`rageval gate`) and its GitHub Action done; Phase 3 grounding check is an experiment awaiting its calibration report; release workflow written (a tag uploads to TestPyPI only) but not yet run; nothing published.**
 > The package is not on PyPI or TestPyPI. Install from source (below). The repository is private until v0.1.
 > Scope and the reasons for it: [docs/decisions/ADR-0001-v0.1-scope.md](./docs/decisions/ADR-0001-v0.1-scope.md).
 
@@ -20,7 +20,11 @@
 - Typed (`py.typed`), mypy strict, ruff, a 95% branch-coverage floor enforced in CI, CI on Python 3.11-3.14 (Ubuntu) and 3.13 (macOS).
 - A tiny in-memory loader (`load`) that turns `(query, retrieved, relevant)` triples into records.
 
-Not yet: a grounding check, a published package. See [ROADMAP.md](./ROADMAP.md).
+Not yet: a published package. A grounding check exists only as an experiment (below). See [ROADMAP.md](./ROADMAP.md).
+
+## Grounding (experimental)
+
+`rageval ground` is an **experiment**, not a feature: a lexical-support baseline, an optional judge (a local Ollama model or any OpenAI-compatible endpoint, key from an environment variable only), a labelling pack generated from the SciFact fixtures with a local model, and a `calibrate` command that scores either method against human labels. The calibration report **does not exist yet**, so this README makes no claim about what the check detects. The rule for the lexical score, the judge prompt, how to read the report and the reference point it will be held against are in [docs/GROUNDING.md](./docs/GROUNDING.md). Nothing in it is imported by `rageval run`, `compare` or `gate`, and CI runs no model.
 
 ## Install
 
