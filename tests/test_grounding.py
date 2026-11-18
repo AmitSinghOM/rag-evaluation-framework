@@ -10,7 +10,10 @@ import json
 import random
 import subprocess
 import sys
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from threading import Thread
 from typing import Any
 from urllib.error import HTTPError, URLError
 
@@ -257,6 +260,76 @@ def test_openai_compatible_judge_transport_errors(monkeypatch: pytest.MonkeyPatc
         judge.judge("q", "a", [])
 
 
+class _Recorder(BaseHTTPRequestHandler):
+    """A second host that records what reaches it and answers like a judge would."""
+
+    seen: list[tuple[str, str | None]] = []  # (method, Authorization header)
+
+    def do_GET(self) -> None:  # noqa: N802 - http.server API
+        _Recorder.seen.append((self.command, self.headers.get("Authorization")))
+        body = json.dumps(
+            {"choices": [{"message": {"content": '{"grounded": true, "confidence": 1}'}}]}
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_POST = do_GET
+
+    def log_message(self, *args: Any) -> None:
+        return
+
+
+class _Redirector(BaseHTTPRequestHandler):
+    target = ""
+
+    def do_POST(self) -> None:  # noqa: N802 - http.server API
+        self.send_response(302)
+        self.send_header("Location", _Redirector.target)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *args: Any) -> None:
+        return
+
+
+@pytest.fixture
+def redirecting_servers() -> Iterator[tuple[str, str]]:
+    """``(redirector base_url, target base_url)``: the first 302s every POST to the second."""
+    target = HTTPServer(("127.0.0.1", 0), _Recorder)
+    _Redirector.target = f"http://127.0.0.1:{target.server_port}/elsewhere/chat/completions"
+    redirector = HTTPServer(("127.0.0.1", 0), _Redirector)
+    _Recorder.seen = []
+    threads = [Thread(target=s.serve_forever, daemon=True) for s in (target, redirector)]
+    for thread in threads:
+        thread.start()
+    try:
+        yield f"http://127.0.0.1:{redirector.server_port}", _Redirector.target
+    finally:
+        for server in (target, redirector):
+            server.shutdown()
+            server.server_close()
+
+
+def test_judge_never_follows_a_redirect_so_the_key_stays_with_the_named_host(
+    monkeypatch: pytest.MonkeyPatch, redirecting_servers: tuple[str, str]
+) -> None:
+    # Real sockets, real urllib: the lock is on the opener, not on a mock. On the
+    # unfixed code urllib follows the 302 as a GET to the other host with the
+    # Bearer header attached and the judge returns a verdict from there.
+    base_url, target = redirecting_servers
+    monkeypatch.setenv("RAGEVAL_JUDGE_API_KEY", "sk-test-not-a-real-key")
+    judge = OpenAICompatibleJudge(base_url=base_url, model="m")
+    with pytest.raises(JudgeError, match="redirected \\(HTTP 302\\)") as info:
+        judge.judge("q", "a", ["p"])
+    assert target in str(info.value) and "sk-test" not in str(info.value)
+    assert _Recorder.seen == []  # nothing, with or without the key, reached the other host
+    with pytest.raises(JudgeError, match="redirected"):
+        OllamaJudge("m", base_url=base_url).judge("q", "a", ["p"])
+    assert _Recorder.seen == []
+
+
 # ------------------------------------------------------------------------- pack
 
 
@@ -324,6 +397,25 @@ def test_prepare_pack_invariants(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert "rageval ground calibrate" in readme
     assert "20 items" in readme
     assert "labels empty" in capsys.readouterr().out
+
+
+def test_prepare_never_overwrites_a_readme_that_is_not_a_pack_readme(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--out ./pack.jsonl` in a project root would have replaced the project's
+    # README.md on the unfixed code. A pack README of its own may be rewritten.
+    (tmp_path / "pack").mkdir()
+    readme = tmp_path / "pack" / "README.md"
+    readme.write_text("# My project\n\nprecious\n", encoding="utf-8")
+    code, out, _, _ = _prepare(tmp_path)
+    assert code == EXIT_INPUT
+    assert "is not a rageval labelling-pack README" in capsys.readouterr().err
+    assert readme.read_text(encoding="utf-8") == "# My project\n\nprecious\n"
+    assert not out.exists()  # nothing was half-written before the refusal
+    readme.unlink()
+    assert _prepare(tmp_path)[0] == EXIT_OK
+    assert readme.read_text(encoding="utf-8").startswith(grounding.PACK_README_TITLE)
+    assert _prepare(tmp_path)[0] == EXIT_OK  # a second run over its own README is fine
 
 
 def test_prepare_is_seeded_and_the_seed_changes_the_sample(tmp_path: Path) -> None:
@@ -752,16 +844,38 @@ def test_confusion_metrics_on_empty_counts_are_zero() -> None:
 # ----------------------------------------------------------------- isolation
 
 
-def test_run_compare_gate_paths_never_import_grounding() -> None:
+def test_run_compare_gate_paths_never_import_grounding(tmp_path: Path) -> None:
+    # The three commands really run (not just --version), so a stray import on
+    # any of their paths is caught; the sentinel proves the probe itself ran.
+    toy = ROOT / "examples" / "toy"
     probe = (
-        "import sys, rageval, rageval.cli; "
-        "from rageval.cli import main; main(['--version']); "
-        "print('rageval.grounding' in sys.modules)"
+        "import sys; from rageval.cli import main; "
+        f"q, a, b, out = {str(toy / 'qrels.txt')!r}, {str(toy / 'run_a.txt')!r}, "
+        f"{str(toy / 'run_b.txt')!r}, {str(tmp_path)!r}; "
+        "assert main(['run', '--qrels', q, '--run', a, '--metrics', 'mrr', '--out', out + '/a.json']) == 0; "  # noqa: E501
+        "assert main(['run', '--qrels', q, '--run', b, '--metrics', 'mrr', '--out', out + '/b.json']) == 0; "  # noqa: E501
+        "assert main(['compare', out + '/a.json', out + '/b.json']) == 0; "
+        "assert main(['gate', '--baseline', out + '/a.json', '--candidate', out + '/b.json', "
+        "'--metric', 'mrr', '--max-drop', '0.5', '--resamples', '50']) == 0; "
+        "print('probe-ran', 'rageval.grounding' in sys.modules)"
     )
     result = subprocess.run(  # noqa: S603 - fixed interpreter, fixed program text
         [sys.executable, "-c", probe], capture_output=True, text=True, check=True, cwd=ROOT
     )
-    assert result.stdout.strip().endswith("False")
+    assert result.stdout.strip().endswith("probe-ran False")
+    # And the inverse: the ground command does import it, so the sentinel is not vacuous.
+    inverse = (
+        "import sys; from rageval.cli import main; "
+        f"main(['ground', 'score', '--pack', {str(tmp_path / 'none.jsonl')!r}, '--out', 'x'])"
+    )
+    result = subprocess.run(  # noqa: S603 - fixed interpreter, fixed program text
+        [sys.executable, "-c", inverse + "; print('rageval.grounding' in sys.modules)"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=ROOT,
+    )
+    assert result.stdout.strip().endswith("True")
 
 
 def test_ground_help_lists_the_three_subcommands(capsys: pytest.CaptureFixture[str]) -> None:

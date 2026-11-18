@@ -10,7 +10,7 @@ explains the fields and records the choices the round-2 contract left open.
 ```json
 {
   "schema_version": 1,
-  "rageval_version": "0.1.0a0",
+  "rageval_version": "0.1.0",
   "created_at": "2026-11-18T02:10:00Z",
   "dataset": {
     "qrels": {"path": "examples/toy/qrels.txt", "sha256": "e3905f1c..."},

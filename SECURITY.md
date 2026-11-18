@@ -25,17 +25,32 @@ and the impact.
 
 ## Scope
 
-rageval is a pure-Python library with no runtime dependencies. It reads
-nothing from disk or the network in this version; it computes metrics over
-in-memory ids. Security-relevant areas are therefore small:
+rageval is a pure-Python library and command line with no runtime
+dependencies. What it touches:
 
-- Input handling: unexpected or hostile ids and grades must raise a clear
-  error, never hang or exhaust memory.
-- Dependency and distribution integrity: `dependencies` stays empty; dev
+- **Files you name.** `rageval run`, `compare` and `gate` read the qrels, run,
+  JSONL and report files given on the command line and write only the paths
+  given with `--out` and `--summary`. Files are read as UTF-8 (a BOM is
+  accepted); a malformed line, a non-UTF-8 file, a non-finite grade or a
+  report value that is not a finite number is an error that names the file
+  (exit 2), never a silent wrong score. Nothing else on disk is read.
+- **The network, only in the experiment.** `rageval ground` with a judge or
+  generator sends the question, passages and answer to the server you name
+  with `--base-url` (a local Ollama by default). `run`, `compare` and `gate`
+  never import that module (a test locks this). The API key for an
+  OpenAI-compatible server is read from an environment variable at call
+  time, is never written to a file, a report or an error message, and
+  redirects are not followed, so it is sent only to the host you named.
+- **The GitHub Action** installs rageval from its own checkout and passes
+  its inputs to the command through environment variables, never through
+  `${{ }}` in script text.
+- **Dependency and distribution integrity:** `dependencies` stays empty; dev
   tooling (including the `ranx` reference used only in tests) must never
-  reach a user install. CI checks this on every change.
+  reach a user install. CI checks this on every change. Release uploads use
+  Trusted Publishing (OIDC); no token is stored anywhere.
 
-Future loaders (Phase 1) will read files and will extend this list.
+Hostile ids, grades or report values must raise a clear error, never hang
+or exhaust memory.
 
 ## Response
 

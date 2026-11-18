@@ -48,6 +48,12 @@ def parse_metric(name: str) -> tuple[str, int | None]:
     return base, k
 
 
+def canonical_metric(name: str) -> str:
+    """``"ndcg@010" -> "ndcg@10"``: the key a report and ``rageval gate --metric`` agree on."""
+    base, k = parse_metric(name)
+    return base if k is None else f"{base}@{k}"
+
+
 def _score(name: str, retrieved: Sequence[str], grades: Mapping[str, float]) -> float:
     base, k = parse_metric(name)
     if k is None:
@@ -71,11 +77,9 @@ def evaluate(
     ``qrels_ref`` and ``run_ref`` record where the inputs came from; they are
     ``None`` fields in the report when evaluating in-memory data.
     """
-    names = list(dict.fromkeys(metrics))
+    names = list(dict.fromkeys(canonical_metric(name) for name in metrics))
     if not names:
         raise ValueError("at least one metric is required")
-    for name in names:
-        parse_metric(name)
     if not qrels:
         raise ValueError("qrels contain no queries")
     per_query: dict[str, dict[str, float]] = {}

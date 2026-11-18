@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from math import isnan
+from math import isfinite, isnan
 from pathlib import Path
 
 Qrels = dict[str, dict[str, float]]
@@ -45,12 +45,22 @@ class LoaderError(ValueError):
 
 
 def _lines(path: str | Path) -> Iterator[tuple[int, str]]:
-    """Yield ``(line_no, stripped_line)`` for every non-blank line."""
-    with Path(path).open(encoding="utf-8") as fh:
-        for line_no, raw in enumerate(fh, start=1):
-            line = raw.strip()
-            if line:
-                yield line_no, line
+    """Yield ``(line_no, stripped_line)`` for every non-blank line.
+
+    UTF-8 with or without a BOM (Windows editors write one; ``str.strip`` does
+    not remove it, so it would silently become part of the first query id).
+    Any other encoding is a :class:`LoaderError` naming the file.
+    """
+    try:
+        with Path(path).open(encoding="utf-8-sig") as fh:
+            for line_no, raw in enumerate(fh, start=1):
+                line = raw.strip()
+                if line:
+                    yield line_no, line
+    except UnicodeDecodeError as exc:
+        raise LoaderError(
+            path, 0, f"not UTF-8 ({exc.reason} at byte {exc.start}); re-save the file as UTF-8"
+        ) from None
 
 
 def read_qrels(path: str | Path) -> Qrels:
@@ -126,8 +136,16 @@ def _grades(path: str | Path, line_no: int, value: object) -> dict[str, float]:
         )
     grades: dict[str, float] = {}
     for docid, grade in value.items():
-        if isinstance(grade, bool) or not isinstance(grade, int | float) or grade < 0:
-            raise LoaderError(path, line_no, f"grade for doc {docid!r} must be a number >= 0")
+        # json.loads accepts the non-standard literals NaN and Infinity; neither is a grade.
+        if (
+            isinstance(grade, bool)
+            or not isinstance(grade, int | float)
+            or not isfinite(grade)
+            or grade < 0
+        ):
+            raise LoaderError(
+                path, line_no, f"grade for doc {docid!r} must be a finite number >= 0"
+            )
         grades[docid] = float(grade)
     return grades
 

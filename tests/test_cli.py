@@ -133,7 +133,11 @@ def test_help_and_version_exit_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--help"]) == EXIT_OK
     assert "{run,compare,gate,ground}" in capsys.readouterr().out
     assert main(["--version"]) == EXIT_OK
-    assert capsys.readouterr().out.startswith("rageval 0.1.0a0")
+    assert capsys.readouterr().out == f"rageval {__version__}\n"
+    # The README quotes the printed version; it must be this release's.
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert f"(prints `rageval {__version__}`)" in readme
+    assert "0.1.0a0" not in readme.split("## Install", 1)[1]
 
 
 def test_empty_qrels_file_is_an_input_error(
@@ -147,6 +151,22 @@ def test_empty_qrels_file_is_an_input_error(
     argv = ["run", "--dataset", str(empty), "--metrics", "mrr", "--out", "o.json"]
     assert main(argv) == EXIT_INPUT
     assert "dataset has no queries" in capsys.readouterr().err
+
+
+def test_infinite_grade_in_jsonl_is_exit_2_not_a_nan_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # On the unfixed code this exited 0 and wrote "ndcg@10": NaN into the report,
+    # which docs/report.schema.json (type: number) does not allow.
+    dataset = tmp_path / "inf.jsonl"
+    dataset.write_text(
+        '{"query_id": "q1", "retrieved": ["d1"], "relevant": {"d1": Infinity}}\n', encoding="utf-8"
+    )
+    out = tmp_path / "o.json"
+    argv = ["run", "--dataset", str(dataset), "--metrics", "ndcg@10", "--out", str(out)]
+    assert main(argv) == EXIT_INPUT
+    assert f"{dataset}:1: grade for doc 'd1' must be a finite number" in capsys.readouterr().err
+    assert not out.exists()
 
 
 def test_undecodable_file_is_an_input_error(

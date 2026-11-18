@@ -63,6 +63,16 @@ def test_parse_metric_rejects_bad_names_listing_valid_forms(name: str) -> None:
         parse_metric(name)
 
 
+def test_report_keys_are_canonical_so_gate_metric_names_match() -> None:
+    # "ndcg@010" parses as k=10 but was stored under the spelling given, so
+    # `rageval gate --metric ndcg@10` could not find it in the report.
+    report = evaluate(read_qrels(TOY / "qrels.txt"), read_run(TOY / "run_b.txt"), ["ndcg@010"])
+    assert list(report.metrics) == ["ndcg@10"]
+    assert list(report.per_query["q1"]) == ["ndcg@10"]
+    both = evaluate(read_qrels(TOY / "qrels.txt"), {}, ["mrr@05", "mrr@5", "mrr"])
+    assert list(both.metrics) == ["mrr@5", "mrr"]  # one computation for the two spellings
+
+
 # ---------------------------------------------------------------- evaluate
 
 
@@ -276,5 +286,22 @@ def test_compare_refuses_different_qrels_different_queries_or_nothing_shared(
         compare(evaluate(read_qrels(TOY / "qrels.txt"), {}, ["mrr"]), only_mrr)
     broken = a.to_dict()
     del broken["per_query"]["q4"]["mrr"]
-    with pytest.raises(ReportError, match="per_query is missing 'mrr'"):
+    with pytest.raises(ReportError, match=r"a report: per_query\['q4'\]\['mrr'\] is None"):
         compare(Report.from_dict(broken), _report("run_b.txt"))
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [(float("nan"), "nan"), (float("inf"), "inf"), ("0.5", "'0.5'"), (True, "True")],
+)
+def test_compare_refuses_a_non_finite_or_non_numeric_per_query_value(
+    value: object, shown: str
+) -> None:
+    # Same rule as the gate. On the unfixed code a NaN row gave "+nan" with exit 0
+    # and a string row crashed with TypeError (exit 3, "internal error").
+    a = _report("run_a.txt")
+    edited = a.to_dict()
+    edited["per_query"]["q2"]["recall@100"] = value
+    expected = rf"b report: per_query\['q2'\]\['recall@100'\] is {shown}"
+    with pytest.raises(ReportError, match=expected):
+        compare(a, Report.from_dict(edited))

@@ -16,7 +16,7 @@ from .metrics import (
 from .report import Comparison, Report, ReportError, compare
 from .stats import bootstrap_ci, paired_diff_ci
 
-__version__ = "0.1.0a0"
+__version__ = "0.1.0"
 
 __all__ = [
     "Comparison",

@@ -86,3 +86,50 @@ def test_no_workflow_or_action_holds_a_stored_credential() -> None:
             assert needle not in text, (path.name, needle)
         # A PyPI API token is "pypi-" plus a long base64 macaroon.
         assert not re.search(r"pypi-[a-z0-9_-]{20,}", text), path.name
+
+
+def test_sdist_rules_ship_the_toy_examples_and_no_tests() -> None:
+    # The rule file; CI's build job checks the built sdist against the same rules
+    # (job `build`, step "The sdist carries examples/toy and no tests").
+    manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8").splitlines()
+    rules = [line for line in manifest if line and not line.startswith("#")]
+    assert rules == ["graft examples/toy", "prune tests"]
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "tar tzf dist/*.tar.gz" in ci and "examples/toy/qrels.txt" in ci
+    assert "'^(tests/|examples/scifact/|\\.github/)'" in ci
+
+
+def test_build_tools_are_pinned_where_dependabot_can_see_them() -> None:
+    # Dependabot's pip updater reads *.txt requirements files at the root (and
+    # pyproject), not version pins typed into a workflow `run:` step.
+    pins = [
+        line
+        for line in (ROOT / "requirements-release.txt").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert [p.split("==")[0] for p in pins] == ["build", "twine"]
+    assert all(re.fullmatch(r"\w+==\d+(\.\d+)+", p) for p in pins), pins
+    for name in ("ci.yml", "release.yml"):
+        text = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        assert "-r requirements-release.txt" in text, name
+        assert not re.search(r"pip install .*\b(build|twine)==", text), name
+
+
+def test_readme_links_resolve_on_the_pypi_page_too() -> None:
+    # PyPI renders the README as-is, so a relative link (./docs/...) points at
+    # pypi.org and 404s. Anchors (#section) are fine.
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "](./" not in readme and "](docs/" not in readme
+    targets = re.findall(
+        r"\]\((https://github\.com/AmitSinghOM/rag-evaluation-framework/blob/main/[^)#]+)", readme
+    )
+    assert len(targets) >= 10
+    for url in targets:  # every linked file exists in the repository
+        assert (ROOT / url.split("/blob/main/", 1)[1]).is_file(), url
+
+
+def test_security_policy_describes_what_the_code_touches() -> None:
+    text = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    assert "reads nothing from disk" not in text  # true of Phase 0 only
+    for claim in ("--base-url", "redirects are not followed", "environment variable", "--out"):
+        assert claim in text, claim

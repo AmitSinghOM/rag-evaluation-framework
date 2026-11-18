@@ -1,0 +1,6 @@
+# The two tools the build job installs (ci.yml `build`, release.yml `build`).
+# Kept in a requirements file so Dependabot's pip updater (which reads every
+# *.txt requirements file at the repository root) proposes their bumps; pins
+# written inline in a workflow `run:` step are invisible to it.
+build==1.6.1
+twine==7.0.0

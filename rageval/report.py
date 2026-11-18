@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -242,11 +243,26 @@ class Comparison:
         return "\n".join(lines) + "\n"
 
 
-def _column(report: Report, name: str, qids: list[str]) -> list[float]:
-    try:
-        return [report.per_query[qid][name] for qid in qids]
-    except KeyError:
-        raise ReportError(f"per_query is missing {name!r} for at least one query") from None
+def per_query_values(report: Report, which: str, name: str, qids: list[str]) -> list[float]:
+    """The per-query column for ``name``; ``ReportError`` on a gap or a non-finite value.
+
+    The file is untrusted JSON: Python's json accepts NaN and Infinity, and a
+    hand-edited row can hold anything, so the type is checked as well as
+    finiteness. Shared by ``compare`` and ``gate`` so both refuse the same files.
+    """
+    values: list[float] = []
+    for qid in qids:
+        value: object = report.per_query[qid].get(name)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(value)
+        ):
+            raise ReportError(
+                f"{which} report: per_query[{qid!r}][{name!r}] is {value!r}, not a finite number"
+            )
+        values.append(float(value))
+    return values
 
 
 def compare(a: Report, b: Report) -> Comparison:
@@ -270,8 +286,8 @@ def compare(a: Report, b: Report) -> Comparison:
     qids = list(a.per_query)
     metrics: dict[str, MetricDiff] = {}
     for name in shared:
-        values_a = _column(a, name, qids)
-        values_b = _column(b, name, qids)
+        values_a = per_query_values(a, "a", name, qids)
+        values_b = per_query_values(b, "b", name, qids)
         diffs = [y - x for x, y in zip(values_a, values_b, strict=True)]
         metrics[name] = MetricDiff(
             mean_a=a.metrics[name].mean,
