@@ -180,3 +180,14 @@ def test_version_matches_pyproject() -> None:
     with pyproject.open("rb") as fh:
         declared = tomllib.load(fh)["project"]["version"]
     assert rageval.__version__ == declared
+
+
+@pytest.mark.parametrize("grade", [float("inf"), float("-inf"), float("nan")])
+def test_a_non_finite_grade_is_a_value_error_not_a_nan_score(grade: float) -> None:
+    # On the unfixed code {"a": inf} gave ndcg inf/inf = nan and {"a": nan}
+    # silently counted as "not relevant" (nan > 0 is False).
+    for metric in (recall_at_k, precision_at_k, dcg_at_k, ndcg_at_k):
+        with pytest.raises(ValueError, match="finite"):
+            metric(["a"], {"a": grade}, 1)
+    with pytest.raises(ValueError, match="finite"):
+        mrr(["a"], {"a": grade})

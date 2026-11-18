@@ -149,6 +149,22 @@ def test_empty_qrels_file_is_an_input_error(
     assert "dataset has no queries" in capsys.readouterr().err
 
 
+def test_infinite_grade_in_jsonl_is_exit_2_not_a_nan_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # On the unfixed code this exited 0 and wrote "ndcg@10": NaN into the report,
+    # which docs/report.schema.json (type: number) does not allow.
+    dataset = tmp_path / "inf.jsonl"
+    dataset.write_text(
+        '{"query_id": "q1", "retrieved": ["d1"], "relevant": {"d1": Infinity}}\n', encoding="utf-8"
+    )
+    out = tmp_path / "o.json"
+    argv = ["run", "--dataset", str(dataset), "--metrics", "ndcg@10", "--out", str(out)]
+    assert main(argv) == EXIT_INPUT
+    assert f"{dataset}:1: grade for doc 'd1' must be a finite number" in capsys.readouterr().err
+    assert not out.exists()
+
+
 def test_undecodable_file_is_an_input_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

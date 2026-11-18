@@ -25,7 +25,7 @@ Conventions
 from __future__ import annotations
 
 from collections.abc import Hashable, Iterable, Mapping, Sequence
-from math import log2
+from math import isfinite, log2
 from typing import TypeVar
 
 DocId = Hashable
@@ -35,9 +35,20 @@ Relevance = Iterable[D] | Mapping[D, float]
 
 
 def _grades(relevant: Relevance[D]) -> dict[D, float]:
-    """Normalise ``relevant`` to ``{id: grade}`` keeping only grades > 0."""
+    """Normalise ``relevant`` to ``{id: grade}`` keeping only grades > 0.
+
+    A grade that is not a finite number raises ``ValueError``: ``inf`` would
+    make ``ndcg`` ``inf / inf = nan`` and ``nan`` would silently count as
+    "not relevant", so neither can be a score anyone meant.
+    """
     if isinstance(relevant, Mapping):
-        return {doc: float(grade) for doc, grade in relevant.items() if grade > 0}
+        grades: dict[D, float] = {}
+        for doc, grade in relevant.items():
+            if not isfinite(grade):
+                raise ValueError(f"grade for {doc!r} must be a finite number, got {grade!r}")
+            if grade > 0:
+                grades[doc] = float(grade)
+        return grades
     return dict.fromkeys(relevant, 1.0)
 
 

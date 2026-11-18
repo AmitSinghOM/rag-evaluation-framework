@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from math import isnan
+from math import isfinite, isnan
 from pathlib import Path
 
 Qrels = dict[str, dict[str, float]]
@@ -136,8 +136,16 @@ def _grades(path: str | Path, line_no: int, value: object) -> dict[str, float]:
         )
     grades: dict[str, float] = {}
     for docid, grade in value.items():
-        if isinstance(grade, bool) or not isinstance(grade, int | float) or grade < 0:
-            raise LoaderError(path, line_no, f"grade for doc {docid!r} must be a number >= 0")
+        # json.loads accepts the non-standard literals NaN and Infinity; neither is a grade.
+        if (
+            isinstance(grade, bool)
+            or not isinstance(grade, int | float)
+            or not isfinite(grade)
+            or grade < 0
+        ):
+            raise LoaderError(
+                path, line_no, f"grade for doc {docid!r} must be a finite number >= 0"
+            )
         grades[docid] = float(grade)
     return grades
 

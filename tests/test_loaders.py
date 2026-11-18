@@ -140,8 +140,12 @@ def test_jsonl_list_of_relevant_ids_means_grade_one(tmp_path: Path) -> None:
         ('{"query_id": "b", "retrieved": []}', "needs 'retrieved' and 'relevant'"),
         ('{"query_id": "b", "retrieved": [1], "relevant": []}', "'retrieved' must be a list"),
         ('{"query_id": "b", "retrieved": [], "relevant": "x"}', "'relevant' must be a list"),
-        ('{"query_id": "b", "retrieved": [], "relevant": {"x": -1}}', "must be a number >= 0"),
-        ('{"query_id": "b", "retrieved": [], "relevant": {"x": true}}', "must be a number >= 0"),
+        ('{"query_id": "b", "retrieved": [], "relevant": {"x": -1}}', "must be a finite number"),
+        ('{"query_id": "b", "retrieved": [], "relevant": {"x": true}}', "must be a finite number"),
+        # json.loads accepts these non-standard literals; the unfixed loader let
+        # Infinity through and the report came out with "ndcg@10": NaN, exit 0.
+        ('{"query_id": "b", "retrieved": [], "relevant": {"x": Infinity}}', "must be a finite"),
+        ('{"query_id": "b", "retrieved": [], "relevant": {"x": NaN}}', "must be a finite"),
         ('{"query_id": "b", "retrieved": [], "relevant": [2]}', "'relevant' must be a list"),
         ('{"query_id": "a", "retrieved": [], "relevant": []}', "duplicate query_id 'a'"),
     ],
