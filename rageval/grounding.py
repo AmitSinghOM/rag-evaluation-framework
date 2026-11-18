@@ -579,7 +579,10 @@ def pack_to_markdown(pack: Pack) -> str:
     return "\n".join(lines)
 
 
-PACK_README = """# rageval grounding labelling pack
+PACK_README_TITLE = "# rageval grounding labelling pack"
+PACK_README = (
+    PACK_README_TITLE
+    + """
 
 {n} items. About one minute each. Labels are yours; nothing is pre-filled.
 
@@ -610,17 +613,29 @@ rageval ground calibrate --pack pack.jsonl --sheet pack.md --scores scores.json 
 (or a judge method). The report refuses fewer than {min_labelled} labelled items and warns
 under {small}. `unsure` rows are left out. See `docs/GROUNDING.md` in the repository.
 """
+)
 
 
 def write_pack(pack: Pack, out: str | Path, sheet: str | Path | None, key: str | Path) -> None:
-    """Write ``pack.jsonl``, the Markdown sheet, ``README.md`` beside the pack, and the key."""
+    """Write ``pack.jsonl``, the Markdown sheet, ``README.md`` beside the pack, and the key.
+
+    The README is the one file the caller did not name, so it is never allowed
+    to replace a README.md that is not already a pack README (``--out`` in a
+    project root would otherwise overwrite the project's own README).
+    """
     out_path = Path(out)
+    readme = out_path.parent / "README.md"
+    if readme.exists() and not readme.read_text(encoding="utf-8").startswith(PACK_README_TITLE):
+        raise FileExistsError(
+            f"{readme} exists and is not a rageval labelling-pack README; "
+            "give --out a directory of its own"
+        )
     with out_path.open("w", encoding="utf-8") as fh:
         for item in pack.items:
             fh.write(json.dumps(item.to_dict(), ensure_ascii=False) + "\n")
     if sheet is not None:
         Path(sheet).write_text(pack_to_markdown(pack), encoding="utf-8")
-    (out_path.parent / "README.md").write_text(
+    readme.write_text(
         PACK_README.format(
             n=len(pack.items), rule=LABEL_RULE, min_labelled=MIN_LABELLED, small=SMALL_LABELLED
         ),

@@ -399,6 +399,25 @@ def test_prepare_pack_invariants(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert "labels empty" in capsys.readouterr().out
 
 
+def test_prepare_never_overwrites_a_readme_that_is_not_a_pack_readme(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--out ./pack.jsonl` in a project root would have replaced the project's
+    # README.md on the unfixed code. A pack README of its own may be rewritten.
+    (tmp_path / "pack").mkdir()
+    readme = tmp_path / "pack" / "README.md"
+    readme.write_text("# My project\n\nprecious\n", encoding="utf-8")
+    code, out, _, _ = _prepare(tmp_path)
+    assert code == EXIT_INPUT
+    assert "is not a rageval labelling-pack README" in capsys.readouterr().err
+    assert readme.read_text(encoding="utf-8") == "# My project\n\nprecious\n"
+    assert not out.exists()  # nothing was half-written before the refusal
+    readme.unlink()
+    assert _prepare(tmp_path)[0] == EXIT_OK
+    assert readme.read_text(encoding="utf-8").startswith(grounding.PACK_README_TITLE)
+    assert _prepare(tmp_path)[0] == EXIT_OK  # a second run over its own README is fine
+
+
 def test_prepare_is_seeded_and_the_seed_changes_the_sample(tmp_path: Path) -> None:
     code_a, out_a, _, key_a = _prepare(tmp_path / "a")
     code_b, out_b, _, key_b = _prepare(tmp_path / "b")
