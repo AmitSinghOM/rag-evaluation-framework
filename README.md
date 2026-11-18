@@ -4,27 +4,27 @@
 
 > **Status (2026-11-18): Phase 0 metrics corrected and reference-checked; Phase 1 loaders, versioned report with bootstrap CIs and the `rageval run` / `rageval compare` CLI done; Phase 2 non-inferiority regression gate (`rageval gate`) and its GitHub Action done; Phase 3 grounding check is an experiment awaiting its calibration report; release workflow written (a tag uploads to TestPyPI only) but not yet run; nothing published.**
 > The package is not on PyPI or TestPyPI. Install from source (below). The repository is private until v0.1.
-> Scope and the reasons for it: [docs/decisions/ADR-0001-v0.1-scope.md](./docs/decisions/ADR-0001-v0.1-scope.md).
+> Scope and the reasons for it: [docs/decisions/ADR-0001-v0.1-scope.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/decisions/ADR-0001-v0.1-scope.md).
 
 ## What works today
 
 - `recall_at_k`, `precision_at_k`, `mrr` (with optional `k`), `dcg_at_k`, `ndcg_at_k` over ordered id lists.
 - Binary relevance (a set of ids) or graded relevance (a mapping `id -> grade`; grade 0 = judged not relevant).
 - Duplicate ids in a ranking count once, at their first position; later repeats are wasted slots and cannot inflate a score.
-- Every rule is written down in [docs/METRIC-DEFINITIONS.md](./docs/METRIC-DEFINITIONS.md) and locked by a test that scores 256 synthetic queries through both rageval and ranx and requires agreement within 1e-9.
+- Every rule is written down in [docs/METRIC-DEFINITIONS.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/METRIC-DEFINITIONS.md) and locked by a test that scores 256 synthetic queries through both rageval and ranx and requires agreement within 1e-9.
 - Loaders for TREC qrels, TREC run files and a JSONL dataset format (`read_qrels`, `read_run`, `read_jsonl`); a malformed line fails with the file and line number.
-- `rageval run`: a versioned JSON report (`schema_version` 1, [docs/REPORT-SCHEMA.md](./docs/REPORT-SCHEMA.md), [docs/report.schema.json](./docs/report.schema.json)) with per-query scores, means and seeded bootstrap 95% confidence intervals; `rageval compare`: paired per-query differences with their CI, refusing reports made on different qrels. Means agree with `ranx.evaluate` on the same files within 1e-9.
-- `rageval gate`: a non-inferiority regression gate for CI. Per metric it fails (exit 10) unless the lower bound of the paired bootstrap CI of candidate minus baseline is above `-max_drop`; a composite GitHub Action (`action.yml`) wraps it. See [Regression gate](#regression-gate) and [docs/GATE.md](./docs/GATE.md).
+- `rageval run`: a versioned JSON report (`schema_version` 1, [docs/REPORT-SCHEMA.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/REPORT-SCHEMA.md), [docs/report.schema.json](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/report.schema.json)) with per-query scores, means and seeded bootstrap 95% confidence intervals; `rageval compare`: paired per-query differences with their CI, refusing reports made on different qrels. Means agree with `ranx.evaluate` on the same files within 1e-9.
+- `rageval gate`: a non-inferiority regression gate for CI. Per metric it fails (exit 10) unless the lower bound of the paired bootstrap CI of candidate minus baseline is above `-max_drop`; a composite GitHub Action (`action.yml`) wraps it. See [Regression gate](#regression-gate) and [docs/GATE.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/GATE.md).
 - `rageval run --dataset data.jsonl`: one JSONL file (judgments and ranking per query) instead of a TREC qrels file plus a run file. `python -m rageval` works the same as `rageval`.
-- A release workflow ([docs/RELEASING.md](./docs/RELEASING.md)): a `v*` tag builds the sdist and wheel, uploads them to TestPyPI only and attaches them to a GitHub Release; the real PyPI is reached only by a manual run on a tag with `confirm: publish`. Uploads use Trusted Publishing (OIDC), so no token is stored anywhere. It has not been run yet. CI builds the wheel, installs it in a clean venv and runs the quickstart below on every change.
+- A release workflow ([docs/RELEASING.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/RELEASING.md)): a `v*` tag builds the sdist and wheel, uploads them to TestPyPI only and attaches them to a GitHub Release; the real PyPI is reached only by a manual run on a tag with `confirm: publish`. Uploads use Trusted Publishing (OIDC), so no token is stored anywhere. It has not been run yet. CI builds the wheel, installs it in a clean venv and runs the quickstart below on every change.
 - Typed (`py.typed`), mypy strict, ruff, a 95% branch-coverage floor enforced in CI, CI on Python 3.11-3.14 (Ubuntu) and 3.13 (macOS).
 - A tiny in-memory loader (`load`) that turns `(query, retrieved, relevant)` triples into records.
 
-Not yet: a published package. A grounding check exists only as an experiment (below). See [ROADMAP.md](./ROADMAP.md).
+Not yet: a published package. A grounding check exists only as an experiment (below). See [ROADMAP.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/ROADMAP.md).
 
 ## Grounding (experimental)
 
-`rageval ground` is an **experiment**, not a feature: a lexical-support baseline, an optional judge (a local Ollama model or any OpenAI-compatible endpoint, key from an environment variable only), a labelling pack generated from the SciFact fixtures with a local model, and a `calibrate` command that scores either method against human labels. The calibration report **does not exist yet**, so this README makes no claim about what the check detects. The rule for the lexical score, the judge prompt, how to read the report and the reference point it will be held against are in [docs/GROUNDING.md](./docs/GROUNDING.md). Nothing in it is imported by `rageval run`, `compare` or `gate`, and CI runs no model.
+`rageval ground` is an **experiment**, not a feature: a lexical-support baseline, an optional judge (a local Ollama model or any OpenAI-compatible endpoint, key from an environment variable only), a labelling pack generated from the SciFact fixtures with a local model, and a `calibrate` command that scores either method against human labels. The calibration report **does not exist yet**, so this README makes no claim about what the check detects. The rule for the lexical score, the judge prompt, how to read the report and the reference point it will be held against are in [docs/GROUNDING.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/GROUNDING.md). Nothing in it is imported by `rageval run`, `compare` or `gate`, and CI runs no model.
 
 ## Install
 
@@ -39,7 +39,7 @@ Python 3.11 or newer. The install brings no third-party package. Check it with `
 
 ## Quickstart (Phase 1)
 
-From a clone of this repository, in a fresh virtual environment. The toy fixtures are six judged queries and two runs, small enough to check by hand ([examples/toy/README.md](./examples/toy/README.md)).
+From a clone of this repository, in a fresh virtual environment. The toy fixtures are six judged queries and two runs, small enough to check by hand ([examples/toy/README.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/examples/toy/README.md)).
 
 ```bash
 pip install .
@@ -101,7 +101,7 @@ Metric names: `ndcg@K`, `recall@K`, `precision@K`, `mrr`, `mrr@K`. Options: `--r
 
 ### One JSONL file instead of two TREC files
 
-`--dataset` reads one object per query, `{"query_id": ..., "query": ..., "retrieved": [...], "relevant": {id: grade} or [ids]}` (format: [docs/REPORT-SCHEMA.md](./docs/REPORT-SCHEMA.md#input-formats)). Give either `--dataset` or `--qrels` with `--run`; mixing them is a usage error (exit 1). `examples/toy/dataset.jsonl` holds the same data as `qrels.txt` plus `run_b.txt`, so it scores the same:
+`--dataset` reads one object per query, `{"query_id": ..., "query": ..., "retrieved": [...], "relevant": {id: grade} or [ids]}` (format: [docs/REPORT-SCHEMA.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/REPORT-SCHEMA.md#input-formats)). Give either `--dataset` or `--qrels` with `--run`; mixing them is a usage error (exit 1). `examples/toy/dataset.jsonl` holds the same data as `qrels.txt` plus `run_b.txt`, so it scores the same:
 
 ```bash
 rageval run --dataset examples/toy/dataset.jsonl --metrics ndcg@10,recall@100,mrr --out report_j.json
@@ -123,7 +123,7 @@ The report layout is unchanged (`schema_version` 1). For a JSONL input, `dataset
 
 ## Regression gate
 
-`rageval gate` fails a CI job when a candidate is worse than the baseline by more than a drop you accept. Per metric it takes the per-query difference (candidate − baseline), bootstraps its mean, and passes only when the interval's **lower bound** is above `-max_drop`: the candidate must show it is not worse. Too little evidence is a fail, not a pass. Why this and not a p-value, and how to pick `--max-drop`: [docs/GATE.md](./docs/GATE.md).
+`rageval gate` fails a CI job when a candidate is worse than the baseline by more than a drop you accept. Per metric it takes the per-query difference (candidate − baseline), bootstraps its mean, and passes only when the interval's **lower bound** is above `-max_drop`: the candidate must show it is not worse. Too little evidence is a fail, not a pass. Why this and not a p-value, and how to pick `--max-drop`: [docs/GATE.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/docs/GATE.md).
 
 With the two Quickstart reports (Python 3.13.12, same fresh venv):
 
@@ -238,8 +238,8 @@ pip install -e ".[dev]"      # pulls ranx (numba, pandas, scipy) for the cross-c
 ruff check . && ruff format --check . && mypy && pytest --cov
 ```
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md) and [CHANGELOG.md](./CHANGELOG.md).
+See [CONTRIBUTING.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/CONTRIBUTING.md), [SECURITY.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/SECURITY.md) and [CHANGELOG.md](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/CHANGELOG.md).
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](https://github.com/AmitSinghOM/rag-evaluation-framework/blob/main/LICENSE).

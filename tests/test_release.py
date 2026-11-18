@@ -113,3 +113,23 @@ def test_build_tools_are_pinned_where_dependabot_can_see_them() -> None:
         text = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
         assert "-r requirements-release.txt" in text, name
         assert not re.search(r"pip install .*\b(build|twine)==", text), name
+
+
+def test_readme_links_resolve_on_the_pypi_page_too() -> None:
+    # PyPI renders the README as-is, so a relative link (./docs/...) points at
+    # pypi.org and 404s. Anchors (#section) are fine.
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "](./" not in readme and "](docs/" not in readme
+    targets = re.findall(
+        r"\]\((https://github\.com/AmitSinghOM/rag-evaluation-framework/blob/main/[^)#]+)", readme
+    )
+    assert len(targets) >= 10
+    for url in targets:  # every linked file exists in the repository
+        assert (ROOT / url.split("/blob/main/", 1)[1]).is_file(), url
+
+
+def test_security_policy_describes_what_the_code_touches() -> None:
+    text = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    assert "reads nothing from disk" not in text  # true of Phase 0 only
+    for claim in ("--base-url", "redirects are not followed", "environment variable", "--out"):
+        assert claim in text, claim
