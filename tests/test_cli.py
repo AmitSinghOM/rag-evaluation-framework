@@ -131,7 +131,7 @@ def test_exit_codes_for_usage_and_input_errors(
 
 def test_help_and_version_exit_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--help"]) == EXIT_OK
-    assert "{run,compare,gate}" in capsys.readouterr().out
+    assert "{run,compare,gate,ground}" in capsys.readouterr().out
     assert main(["--version"]) == EXIT_OK
     assert capsys.readouterr().out.startswith("rageval 0.1.0a0")
 

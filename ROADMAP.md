@@ -34,8 +34,9 @@ Built in small rounds. Each phase ends with CI green, the README status line upd
 ## Phase 3 — Grounding check, EXPERIMENTAL
 **Goal:** Measure, not claim. A grounding signal is only described in the README once its calibration report exists.
 
-- [ ] Lexical-support baseline
-- [ ] Optional judge (Ollama or a free-tier API), clearly optional
+- [x] Lexical-support baseline
+- [x] Optional judge (Ollama or a free-tier API), clearly optional
+- [x] Labelling pack (60 items, two hidden conditions) generated from the SciFact BM25 run with a local 3B model
 - [ ] Calibration report against ≥ 50 human-written labels from a BEIR SciFact dogfood run
 - [ ] README wording taken from the report, labelled experimental
 
